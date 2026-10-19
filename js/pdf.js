@@ -572,7 +572,17 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
         doc.line(MARGIN, y - GAP / 2, PAGE_W - MARGIN, y - GAP / 2);
       }
     }
-    y += 14;
+    // Small centered marker after the zone's last finding: a short rule each side of "End of Zone N".
+    ensure(20);
+    const endText = `End of ${zoneName(zone)}`.toUpperCase();
+    font('bold', 7.5);
+    const ew = doc.getTextWidth(endText) + endText.length * 1.2;
+    const cx = PAGE_W / 2;
+    label(endText, cx - ew / 2, y + 6, MUTED, 7.5);
+    stroke(ACCENT_MID, 0.6);
+    doc.line(cx - ew / 2 - 46, y + 3.5, cx - ew / 2 - 10, y + 3.5);
+    doc.line(cx + ew / 2 + 10, y + 3.5, cx + ew / 2 + 46, y + 3.5);
+    y += 20;
   }
 
   // ================= Summary table =================
