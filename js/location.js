@@ -1,5 +1,4 @@
-// Where and when a photo was taken: GPS from the phone or the photo's own EXIF data,
-// plus the city name, looked up when there's a connection.
+// Where and when a photo was taken: GPS from the phone or the photo's own EXIF data.
 
 // Resolves with { lat, lon, accuracy } or null if location is off, denied or too slow.
 export function getPosition(timeoutMs = 15000) {
@@ -93,24 +92,6 @@ function parseTiff(view, start) {
   return out;
 }
 
-// ---------- City lookup ----------
-
-// Resolves with a place name like "Austin, TX", or null when offline or not found.
-export async function lookupCity(lat, lon) {
-  if (!navigator.onLine) return null;
-  try {
-    const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
-    const r = await fetch(url);
-    if (!r.ok) return null;
-    const d = await r.json();
-    const city = d.city || d.locality;
-    const region = (d.principalSubdivisionCode || '').split('-')[1] || d.principalSubdivision;
-    return [city, region].filter(Boolean).join(', ') || null;
-  } catch {
-    return null;
-  }
-}
-
 // ---------- Display ----------
 
 // "33.44838, -112.07404": the format map apps accept when pasted into search.
@@ -132,11 +113,11 @@ export function formatTime(ms) {
   });
 }
 
-// Smaller details under the coordinates: city, accuracy, time taken.
+// Smaller details under the coordinates: accuracy and time taken. (A city name looked up
+// from the coordinates was dropped in v43 as not accurate enough; old ones aren't shown.)
 export function stampDetails(stamp) {
   if (!stamp) return '';
   const parts = [];
-  if (stamp.city) parts.push(stamp.city);
   if (stamp.accuracy) parts.push(`±${stamp.accuracy} m`);
   if (stamp.takenAt) parts.push(formatTime(stamp.takenAt));
   return parts.join(' · ');

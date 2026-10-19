@@ -5,13 +5,13 @@ import { loadIssueList, saveIssueList, addNewDefaults, resetIssueList, findIssue
 import { buildReportPdf, pdfFileName, DEFAULT_ACCENT } from './pdf.js';
 import { createBackup, readBackup, restoreBackup } from './backup.js';
 import { drawSignature } from './signature.js';
-import { getPosition, readExif, lookupCity, coordsText, mapUrl, stampDetails, copyText, formatTime } from './location.js';
+import { getPosition, readExif, coordsText, mapUrl, stampDetails, copyText, formatTime } from './location.js';
 
 const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 42;
+const APP_VERSION = 43;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -216,7 +216,7 @@ function renderReportGroups(folderId, reports) {
 
 // ---------- Search ----------
 // Finds properties and folders (and a property's contact), subdivisions, reports, and findings
-// (issue, zone, note, city). Every word typed must match somewhere in the item.
+// (issue, zone, note). Every word typed must match somewhere in the item.
 
 let searchQuery = '';
 let searchFrom = ''; // the folder search was opened from, to switch back from Everywhere
@@ -374,7 +374,7 @@ function runSearch() {
   const reportById = new Map(scoped.map((r) => [r.id, r]));
   const findingHits = findings
     .filter((f) => reportById.has(f.reportId))
-    .filter((f) => matches(norm([f.issue, f.zone ? `zone ${f.zone}` : '', f.note, f.stamp?.city].join(' ')), ws))
+    .filter((f) => matches(norm([f.issue, f.zone ? `zone ${f.zone}` : '', f.note].join(' ')), ws))
     .sort((a, b) => reportById.get(b.reportId).date.localeCompare(reportById.get(a.reportId).date) || (a.createdAt || 0) - (b.createdAt || 0))
     .map((f) => () => {
       const r = reportById.get(f.reportId);
@@ -806,27 +806,6 @@ async function renderReport(id) {
       setTimeout(() => card.classList.remove('flash'), 2000);
     }
   }
-  fillMissingCities(findings);
-}
-
-// Photos taken offline get their city once there's a connection.
-let fillingCities = false;
-async function fillMissingCities(findings) {
-  if (fillingCities || !navigator.onLine) return;
-  const todo = findings.filter((f) => f.stamp && f.stamp.lat != null && !f.stamp.city);
-  if (!todo.length) return;
-  fillingCities = true;
-  let changed = false;
-  for (const f of todo) {
-    const city = await lookupCity(f.stamp.lat, f.stamp.lon);
-    if (!city) continue;
-    const latest = await db.getFinding(f.id);
-    if (!latest || !latest.stamp) continue;
-    await db.saveFinding(latest.reportId, { ...latest, stamp: { ...latest.stamp, city } }, latest.id);
-    changed = true;
-  }
-  fillingCities = false;
-  if (changed && current.kind === 'report') render();
 }
 
 window.addEventListener('online', () => current && current.kind === 'report' && render());
@@ -899,7 +878,7 @@ function findingCard(finding, number, list = null, snapshot = null) {
   return li;
 }
 
-// Coordinates with Map and Copy buttons, and city, accuracy and time underneath.
+// Coordinates with Map and Copy buttons, and accuracy and time underneath.
 function locationBox(stamp) {
   const box = document.createElement('div');
   box.className = 'loc-box';
@@ -2151,7 +2130,7 @@ const form = {
   photo: null, // compressed Blob
   more: [], // extra photos (compressed Blobs), shown after the main one
   moreUrls: [],
-  photoStamp: null, // { takenAt, lat, lon, accuracy, city }
+  photoStamp: null, // { takenAt, lat, lon, accuracy } (older findings may also have a city, no longer shown)
   busy: false,
   locating: null, // promise while waiting on GPS for the current photo
   pendingPosition: null, // GPS request started when the camera opens
@@ -2277,12 +2256,6 @@ async function onPhotoPicked(e, fromCamera) {
     showLocStatus('This photo has no location saved in it.');
   }
   form.pendingPosition = null;
-
-  const s = form.photoStamp;
-  if (pick === form.pick && s && s.lat != null) {
-    const city = await lookupCity(s.lat, s.lon);
-    if (city && pick === form.pick) setStamp({ ...form.photoStamp, city });
-  }
 }
 
 // Start GPS as the camera opens, so it's ready by the time the photo is taken.
