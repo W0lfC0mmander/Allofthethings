@@ -11,7 +11,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -2441,7 +2441,8 @@ async function editFinding(finding) {
 // One tap adds a finding for the current zone with a drawn image in place of a photo:
 // a green check for "No issues found", or a red X that sets the issue to "Valve not opening"
 // (priced from the list like any finding). finding.mark is 'ok' or 'fail'. Both open for
-// editing like any other finding.
+// editing like any other finding. A zone holds one mark: tapping the other one swaps it,
+// and tapping the same one again doesn't add a second.
 
 const MARKS = {
   ok: { color: '#1f9d55', issue: 'No issues found', toast: 'no issues found' },
@@ -2490,6 +2491,23 @@ async function addMark(kind) {
   try {
     const report = current.record;
     const zone = zoneOf(report);
+    const marked = `${zone ? zoneName(zone) : 'Zone'} marked: ${MARKS[kind].toast}.`;
+    const existing = (await db.listFindings(report.id)).filter((f) => f.mark && (f.zone || '') === (zone || ''));
+    const same = existing.find((f) => f.mark === kind);
+    if (same) {
+      // Already marked this way: keep that one, and clear any extra marks saved before this fix.
+      for (const f of existing) if (f !== same) await db.deleteFinding(f.id);
+      if (kind === 'ok') {
+        const next = stepZone(zone, 1);
+        current.record = await db.updateReport(report.id, { currentZone: next });
+        await render();
+        showToast(`${marked} Now in ${zoneName(next)}.`, 'ok');
+      } else {
+        await render();
+        showToast(`${zone ? zoneName(zone) : 'This zone'} is already marked: ${MARKS[kind].toast}.`, 'ok');
+      }
+      return;
+    }
     const pos = await getPosition(6000); // the spot is handy for a valve that won't open
     const fields = {
       photo: await markImage(kind),
@@ -2503,7 +2521,7 @@ async function addMark(kind) {
       mark: kind,
     };
     const saved = await db.saveFinding(report.id, fields);
-    const marked = `${zone ? zoneName(zone) : 'Zone'} marked: ${MARKS[kind].toast}.`;
+    for (const f of existing) await db.deleteFinding(f.id); // the other mark it replaces
     if (kind === 'ok') {
       // Nothing to log in a zone that passed, so go straight on to the next one.
       const next = stepZone(zone, 1);
