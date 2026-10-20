@@ -28,6 +28,7 @@ const BUCKET = 'approvals';
 const APPROVE_URL = () => env('APPROVE_URL', 'https://dnotsonice.github.io/Allofthethings/approve.html');
 const FROM = () => env('RESEND_FROM', 'Wet Check <onboarding@resend.dev>');
 const MAX_PDF = 25 * 1024 * 1024;
+const MAX_ATTACHMENT = 20 * 1024 * 1024;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -456,19 +457,25 @@ async function sign(req: Request, body: any) {
   if (!updated || !updated.length) throw new Fail(409, 'This proposal was already answered.');
 
   const company = row.company_name || 'Your irrigation contractor';
-  const attachments = [{ filename: signedName(row), content: base64(signed) }];
+  // Email providers refuse large attachments (Resend: 40 MB total, after base64 encoding),
+  // so a big signed copy goes as a download link that works for 30 days instead.
+  const attach = signed.length <= MAX_ATTACHMENT;
+  const attachments = attach ? [{ filename: signedName(row), content: base64(signed) }] : undefined;
+  const href = attach ? '' : await link(`${base}/signed.pdf`, 30 * 24 * 3600, signedName(row));
+  const copy = attach ? 'Your signed copy is attached.' : `Download your signed copy (link works for 30 days):</p>${button(row.accent, href || '', 'Download signed copy')}<p>`;
+  const ownerCopy = attach ? 'The signed copy with its signature certificate is attached' : `Download the signed copy with its signature certificate (link works for 30 days):</p>${button(row.accent, href || '', 'Download signed copy')}<p>It’s also`;
   const total = est && est.total ? ` for ${money(est.total)}` : '';
   // The approval is saved; a failed email shouldn't tell the customer it wasn't.
   await Promise.allSettled([
     email({
       to: [row.customer_email], replyTo: row.owner_email, attachments,
       subject: `Your signed approval: ${row.property || row.report_name}`,
-      html: emailShell(row.accent, company, `<p>Thank you, ${esc(name)}.</p><p>You approved the proposal${esc(total)} for <strong>${esc(row.property)}</strong>. Your signed copy is attached.</p>`),
+      html: emailShell(row.accent, company, `<p>Thank you, ${esc(name)}.</p><p>You approved the proposal${esc(total)} for <strong>${esc(row.property)}</strong>. ${copy}</p>`),
     }),
     email({
       to: [row.owner_email], attachments,
       subject: `Approved: ${row.property || row.report_name}${total}`,
-      html: emailShell(row.accent, company, `<p><strong>${esc(name)}</strong> (${esc(row.customer_email)}) approved the proposal${esc(total)} for <strong>${esc(row.property)}</strong> on ${esc(utc(signedAt))}.</p><p>The signed copy with its signature certificate is attached, and it’s in the app on the report.</p>`),
+      html: emailShell(row.accent, company, `<p><strong>${esc(name)}</strong> (${esc(row.customer_email)}) approved the proposal${esc(total)} for <strong>${esc(row.property)}</strong> on ${esc(utc(signedAt))}.</p><p>${ownerCopy}${attach ? ', and it’s' : ''} in the app on the report.</p>`),
     }),
   ]);
   return json(await publicView({ ...row, status: 'approved', decided_at: signedAt.toISOString(), signer_name: name, signed_pdf_path: `${base}/signed.pdf` }));

@@ -12,7 +12,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 51;
+const APP_VERSION = 52;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -1030,7 +1030,7 @@ async function deliverFile({ working, workingText, ready, failed, canOpen = fals
 }
 
 // The report's PDF: { blob, name }. Used by Export PDF and by backups.
-async function reportPdf(report) {
+async function reportPdf(report, { photoMax = 0 } = {}) {
   const [path, findings, logo, companyName, accent, list] = await Promise.all([
     db.getPath(report.folderId),
     db.listFindings(report.id),
@@ -1048,7 +1048,7 @@ async function reportPdf(report) {
   const profile = path.length ? path[0].profile : null;
   const blob = await buildReportPdf({
     template: ex.template,
-    show: { photos: ex.photos, coords: ex.coords, itemized: ex.itemized },
+    show: { photos: ex.photos, coords: ex.coords, itemized: ex.itemized, photoMax },
     estimate,
     report,
     property,
@@ -1199,7 +1199,7 @@ async function sendForApproval(report) {
   const closed = showDialog(dialog);
   try {
     const [pdf, logo, companyName, accent] = await Promise.all([
-      reportPdf(report),
+      emailablePdf(report),
       db.getSetting('companyLogo'),
       db.getSetting('companyName'),
       db.getSetting('accentColor'),
@@ -1244,6 +1244,18 @@ async function sendForApproval(report) {
   }
   await closed;
   if (current.kind === 'report' && current.id === report.id) render();
+}
+
+// The report's PDF with photos scaled down to email size (they print about 3 inches wide, so
+// 1000 pixels is plenty); a report with very many photos goes smaller again.
+const EMAIL_PDF_MAX = 18 * 1024 * 1024;
+async function emailablePdf(report) {
+  let pdf = await reportPdf(report, { photoMax: 1000 });
+  if (pdf.blob.size > EMAIL_PDF_MAX) pdf = await reportPdf(report, { photoMax: 640 });
+  if (pdf.blob.size > EMAIL_PDF_MAX) {
+    throw new Error(`This report’s PDF is still ${(pdf.blob.size / 1024 / 1024).toFixed(0)} MB with smaller photos, too large to send. Turn finding photos off in the property’s Export settings, then send it again.`);
+  }
+  return pdf;
 }
 
 function renderApprovalCard(report) {
