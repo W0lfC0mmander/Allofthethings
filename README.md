@@ -49,6 +49,8 @@ Each property profile has an **Export settings** section that picks how that pro
 
 From a report's ⋮ menu, **Send for approval** emails the customer a link to review the PDF and sign it online, either typed or drawn. They can also decline. The report shows whether it's waiting, opened, approved or declined. Once it's approved, tap the card for the signed PDF, which ends with a signature certificate page. The signed copy is also emailed to both of you and included in backups. Sign in under **Settings → Online approvals**. This needs the one-time Supabase and Resend setup in [`supabase/README.md`](supabase/README.md).
 
+**Approvals and work** (card on the home screen) lists reports that are waiting for approval, approved but not started, in progress, done (the latest 20) and declined, with the property, date, total and status. Opening it checks for new answers. **Start** moves an approved job to in progress and **Done** finishes it. The ⋮ menu on each row, the report's ⋮ menu and the approval card on a report can also set the work status, open the signed copy or send again. Work status can be set on any report, including ones approved on paper.
+
 ## Troubleshooting disclaimer
 
 Each finding has an optional checkbox that adds a troubleshooting disclaimer, shown on the finding and in the PDF. The wording defaults to "*Troubleshooting required. Additional proposals may be required to complete this repair." and can be edited and saved from the finding form.

@@ -247,6 +247,10 @@ export async function getPath(id) {
 
 export const getReport = (id) => get('reports', id);
 
+// Every report and folder, for the approvals dashboard (no findings or photos).
+export const listAllReports = () => getAll('reports');
+export const listAllFolders = () => getAll('folders');
+
 // Newest wet check first.
 export async function listReports(folderId) {
   const items = await getAllBy('reports', 'folderId', folderId);

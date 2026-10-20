@@ -173,6 +173,27 @@ main {
   place-items: center;
 }
 .row-more svg { width: 20px; height: 20px; fill: var(--muted); }
+.row-action {
+  flex: none;
+  align-self: center;
+  margin-right: 4px;
+  padding: 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.row-action:active { background: var(--line); }
+.ico.status { width: 26px; height: 26px; flex: none; }
+.ico.status.sent { color: #b26a00; }
+.ico.status.approved { color: #2e7d32; }
+.ico.status.progress { color: var(--accent); }
+.ico.status.done { color: var(--muted); }
+.ico.status.declined { color: var(--danger); }
 
 .empty {
   text-align: center;
@@ -780,3 +801,6 @@ details.zone-group:not([open]) > .section-title { margin-top: 0; }
 .approval-card[data-status="approved"] .backup-icon { color: #2e7d32; }
 .approval-card[data-status="declined"] .backup-icon { color: var(--danger); }
 .approval-card[data-status="sent"] .backup-icon { color: #b26a00; }
+
+/* Approvals dashboard: rows wrap so the status line is readable */
+#approvals-list .row-name, #approvals-list .row-detail { white-space: normal; overflow: visible; }
