@@ -12,7 +12,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 52;
+const APP_VERSION = 53;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -45,6 +45,7 @@ const MORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" c
 // #/f/<id>      a folder
 // #/r/<id>      a report
 // #/settings    settings: company, issues and prices, backup
+// #/approvals   approvals and work: proposals sent, approved, in progress, done
 // #/issues      the issue list and prices
 // #/p/<id>      a property's profile (contact, disclaimer, its own issues and prices)
 // #/search      search everything; #/search/<folder id> searches inside one folder
@@ -53,6 +54,7 @@ const MORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" c
 function route() {
   if (location.hash === '#/issues') return { kind: 'issues', id: '' };
   if (location.hash === '#/settings') return { kind: 'settings', id: '' };
+  if (location.hash === '#/approvals') return { kind: 'approvals', id: '' };
   const s = location.hash.match(/^#\/search(?:\/(.+))?$/);
   if (s) return { kind: 'search', id: s[1] ? decodeURIComponent(s[1]) : '' };
   const p = location.hash.match(/^#\/p\/(.+)$/);
@@ -74,6 +76,7 @@ async function render() {
   if (r.kind === 'report') await renderReport(r.id);
   else if (r.kind === 'issues') await renderIssues();
   else if (r.kind === 'settings') await renderSettings();
+  else if (r.kind === 'approvals') await renderApprovals();
   else if (r.kind === 'profile') await renderProfile(r.id);
   else if (r.kind === 'search') await renderSearch(r.id);
   else await renderFolder(r.id);
@@ -132,6 +135,7 @@ async function renderFolder(id) {
     ? 'Nothing here yet. Tap <strong>New</strong> to add a wet check report or a folder.'
     : 'No properties yet. Tap <strong>New</strong> to add a folder for one.';
   await renderBackupCard(!here);
+  await renderApprovalsCard(!here);
   renderPropertyPhoto(path.length === 1 ? here : null);
   renderProfileCard(path.length === 1 ? here : null);
   $('#app-version').hidden = !!here;
@@ -554,7 +558,7 @@ $('#prop-remove').addEventListener('click', async () => {
 $('#prop-camera').addEventListener('change', onPropertyPhoto);
 $('#prop-library').addEventListener('change', onPropertyPhoto);
 
-function row({ icon, name, detail, href, menuLabel, onMenu }) {
+function row({ icon, name, detail, href, menuLabel, onMenu, action }) {
   const li = document.createElement('li');
   li.className = 'row';
   const a = document.createElement('a');
@@ -575,6 +579,13 @@ function row({ icon, name, detail, href, menuLabel, onMenu }) {
   }
   a.append(text);
   li.append(a);
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'row-action';
+    b.textContent = action.label;
+    b.addEventListener('click', action.run);
+    li.append(b);
+  }
   if (onMenu) {
     const more = document.createElement('button');
     more.className = 'row-more';
@@ -597,7 +608,8 @@ function folderRow(folder) {
 }
 
 const APPROVAL_TAGS = { sent: 'Awaiting approval', approved: 'Approved', declined: 'Declined' };
-const approvalTag = (r) => (r.approval && APPROVAL_TAGS[r.approval.status]) || '';
+const WORK_TAGS = { progress: 'Work in progress', done: 'Work done' };
+const approvalTag = (r) => (r.work && WORK_TAGS[r.work.status]) || (r.approval && APPROVAL_TAGS[r.approval.status]) || '';
 const reportDetail = (r) => [formatDate(r.date), groupOf(r), approvalTag(r)].filter(Boolean).join(' · ');
 
 function reportRow(report, grouped = false) {
@@ -643,6 +655,7 @@ async function reportMenu(report) {
   const action = await askAction(report.name, [
     { label: 'Export PDF', value: 'pdf' },
     ...(cloudReady ? [{ label: report.approval && report.approval.status === 'sent' ? 'Send for approval again' : 'Send for approval', value: 'approval' }] : []),
+    ...workActions(report),
     { label: 'Coordinates list', value: 'coords' },
     { label: report.estimate ? 'Turn off repair estimate' : 'Turn on repair estimate', value: 'estimate' },
     ...(report.estimate ? [{ label: 'Use current prices', value: 'prices' }] : []),
@@ -656,6 +669,7 @@ async function reportMenu(report) {
   if (action === 'prices') await refreshPrices(report);
   if (action === 'pdf') await exportPdf(report);
   if (action === 'approval') await sendForApproval(report);
+  if (action.startsWith('work:')) await setWork(report, action.slice(5));
   if (action === 'coords') await showCoordinates(report);
   if (action === 'edit') await editReport(report);
   if (action === 'delete') await removeReport(report);
@@ -1233,7 +1247,7 @@ async function sendForApproval(report) {
     if (logo instanceof Blob) form.append('logo', logo, 'logo');
     const r = await callApprovals(form);
     report = await db.updateReport(report.id, {
-      approval: { id: r.id, status: 'sent', sentTo: r.sentTo, customerName, sentAt: r.sentAt },
+      approval: { id: r.id, status: 'sent', sentTo: r.sentTo, customerName, sentAt: r.sentAt, total: meta.estimate ? meta.estimate.total : null },
       approvalPdf: null,
     });
     $('#pdf-title').textContent = 'Sent for approval';
@@ -1267,7 +1281,8 @@ function renderApprovalCard(report) {
   $('#approval-icon').innerHTML = APPROVAL_ICONS[a.status];
   if (a.status === 'approved') {
     $('#approval-name').textContent = `Approved by ${a.signerName || a.sentTo}`;
-    $('#approval-detail').textContent = `Signed ${shortTime(a.decidedAt)}. Tap for the signed copy.`;
+    const w = report.work && WORK_TAGS[report.work.status];
+    $('#approval-detail').textContent = `Signed ${shortTime(a.decidedAt)}${w ? ` · ${w}` : ''}. Tap for the signed copy or to update the work.`;
   } else if (a.status === 'declined') {
     $('#approval-name').textContent = `Declined by ${a.signerName || a.sentTo}`;
     $('#approval-detail').textContent = [shortTime(a.decidedAt), a.declineReason ? `“${a.declineReason}”` : ''].filter(Boolean).join(' · ');
@@ -1282,37 +1297,53 @@ function renderApprovalCard(report) {
 const approvalChecked = new Map();
 async function refreshApproval(report, quiet = true) {
   const a = report.approval;
-  if (!a || !cloudReady || !signedInEmail() || !navigator.onLine) return report;
-  if (a.status !== 'sent' && !(a.status === 'approved' && !report.approvalPdf)) return report;
-  if (quiet && Date.now() - (approvalChecked.get(a.id) || 0) < 30000) return report;
-  approvalChecked.set(a.id, Date.now());
+  if (!a || (quiet && Date.now() - (approvalChecked.get(a.id) || 0) < 30000)) return report;
   try {
-    const { items } = await callApprovals({ action: 'status', ids: [a.id] });
-    const it = items && items[0];
-    if (!it) return report;
+    await refreshApprovals([report]);
+  } catch (x) {
+    if (!quiet) showToast(x.message);
+  }
+  return (await db.getReport(report.id)) || report;
+}
+
+// One server request for several reports. Saves each answer (and downloads signed copies)
+// and resolves true if anything changed. Throws on a connection or sign-in problem.
+async function refreshApprovals(reports) {
+  const open = reports.filter((r) => r.approval && (r.approval.status === 'sent' || (r.approval.status === 'approved' && !r.approvalPdf)));
+  if (!open.length || !cloudReady || !signedInEmail() || !navigator.onLine) return false;
+  for (const r of open) approvalChecked.set(r.approval.id, Date.now());
+  const { items } = await callApprovals({ action: 'status', ids: open.map((r) => r.approval.id) });
+  let changed = false;
+  for (const it of items || []) {
+    const report = open.find((r) => r.approval.id === it.id);
+    if (!report) continue;
+    const a = report.approval;
     const patch = {
       approval: { ...a, status: it.status, viewedAt: it.viewedAt, decidedAt: it.decidedAt, signerName: it.signerName, declineReason: it.declineReason, pdfName: it.signedPdfName },
     };
     if (it.status === 'approved' && it.signedPdfUrl && !report.approvalPdf) {
-      const res = await fetch(it.signedPdfUrl);
-      if (res.ok) patch.approvalPdf = new Blob([await res.arrayBuffer()], { type: 'application/pdf' });
+      try {
+        const res = await fetch(it.signedPdfUrl);
+        if (res.ok) patch.approvalPdf = new Blob([await res.arrayBuffer()], { type: 'application/pdf' });
+      } catch {} // tried again next time
     }
-    report = await db.updateReport(report.id, patch);
-    if (current.kind === 'report' && current.id === report.id) {
-      current.record = report;
-      renderApprovalCard(report);
-      $('#subtitle').textContent = reportDetail(report);
+    if (it.status !== a.status || it.viewedAt !== a.viewedAt || patch.approvalPdf) changed = true;
+    const updated = await db.updateReport(report.id, patch);
+    if (current.kind === 'report' && current.id === updated.id) {
+      current.record = updated;
+      renderApprovalCard(updated);
+      $('#subtitle').textContent = reportDetail(updated);
     }
-    if (a.status === 'sent' && it.status === 'approved') showToast(`${it.signerName || it.sentTo} approved ${report.name}.`, 'ok');
-    if (a.status === 'sent' && it.status === 'declined') showToast(`${it.signerName || it.sentTo} declined ${report.name}.`);
-  } catch (x) {
-    if (!quiet) showToast(x.message);
+    if (a.status === 'sent' && it.status === 'approved') showToast(`${it.signerName || it.sentTo} approved ${updated.name}.`, 'ok');
+    if (a.status === 'sent' && it.status === 'declined') showToast(`${it.signerName || it.sentTo} declined ${updated.name}.`);
   }
-  return report;
+  return changed;
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && current && current.kind === 'report') refreshApproval(current.record);
+  if (document.visibilityState !== 'visible' || !current) return;
+  if (current.kind === 'report') refreshApproval(current.record);
+  if (current.kind === 'approvals') render();
 });
 
 $('#approval-card').addEventListener('click', async () => {
@@ -1320,18 +1351,10 @@ $('#approval-card').addEventListener('click', async () => {
   const a = report.approval;
   if (!a) return;
   if (a.status === 'approved') {
-    return deliverFile({
-      working: 'Getting the signed copy…',
-      workingText: '',
-      ready: 'Signed copy',
-      failed: 'Couldn’t get the signed copy',
-      canOpen: true,
-      build: async () => {
-        if (!(report.approvalPdf instanceof Blob)) report = await refreshApproval(report, false);
-        if (!(report.approvalPdf instanceof Blob)) throw new Error('The signed copy hasn’t downloaded to this phone yet. Try again when you’re online.');
-        return { blob: report.approvalPdf, name: a.pdfName || pdfFileName([], report).replace(/\.pdf$/i, ' - signed.pdf'), detail: `Signed by ${a.signerName}, with its signature certificate on the last page` };
-      },
-    });
+    const choice = await askAction(`Approved by ${a.signerName || a.sentTo}`, [{ label: 'Signed copy', value: 'copy' }, ...workActions(report)]);
+    if (choice.startsWith('work:')) return setWork(report, choice.slice(5));
+    if (choice !== 'copy') return;
+    return showSignedCopy(report);
   }
   const action = await askAction(a.status === 'sent' ? 'Waiting for approval' : 'Declined', [
     ...(a.status === 'sent' ? [{ label: 'Check for an answer', value: 'check' }] : []),
@@ -1354,6 +1377,189 @@ $('#approval-card').addEventListener('click', async () => {
     }
   }
 });
+
+function showSignedCopy(report) {
+  const a = report.approval;
+  return deliverFile({
+      working: 'Getting the signed copy…',
+      workingText: '',
+      ready: 'Signed copy',
+      failed: 'Couldn’t get the signed copy',
+      canOpen: true,
+      build: async () => {
+        if (!(report.approvalPdf instanceof Blob)) report = await refreshApproval(report, false);
+        if (!(report.approvalPdf instanceof Blob)) throw new Error('The signed copy hasn’t downloaded to this phone yet. Try again when you’re online.');
+        return { blob: report.approvalPdf, name: a.pdfName || pdfFileName([], report).replace(/\.pdf$/i, ' - signed.pdf'), detail: `Signed by ${a.signerName}, with its signature certificate on the last page` };
+      },
+    });
+}
+
+// ---------- Work status and the approvals dashboard ----------
+// report.work { status: 'progress' | 'done', startedAt, doneAt } tracks the job once it's
+// approved (online or on paper). Clearing it puts the report back to just "approved".
+
+function workActions(report) {
+  const w = report.work && report.work.status;
+  if (w === 'progress') return [{ label: 'Mark work done', value: 'work:done' }, { label: 'Work not started yet', value: 'work:none' }];
+  if (w === 'done') return [{ label: 'Reopen work (in progress)', value: 'work:progress' }];
+  return [{ label: 'Mark work in progress', value: 'work:progress' }, { label: 'Mark work done', value: 'work:done' }];
+}
+
+async function setWork(report, status) {
+  const prev = report.work || {};
+  const now = Date.now();
+  const work = status === 'none' ? null : {
+    status,
+    startedAt: status === 'progress' && prev.status !== 'progress' ? now : prev.startedAt || now,
+    doneAt: status === 'done' ? now : null,
+  };
+  const updated = await db.updateReport(report.id, { work });
+  if (current.kind === 'report' && current.id === report.id) current.record = updated;
+  await render();
+  showToast(status === 'progress' ? `${report.name}: work in progress.` : status === 'done' ? `${report.name}: work done.` : `${report.name}: back to not started.`, 'ok');
+  return updated;
+}
+
+// Which dashboard section a report belongs in, or '' if none.
+function workStage(r) {
+  const w = r.work && r.work.status;
+  if (w === 'progress' || w === 'done') return w;
+  const a = r.approval && r.approval.status;
+  return a === 'sent' || a === 'approved' || a === 'declined' ? a : '';
+}
+
+const STAGES = [
+  { key: 'sent', title: 'Waiting for approval' },
+  { key: 'approved', title: 'Approved, not started' },
+  { key: 'progress', title: 'In progress' },
+  { key: 'done', title: 'Done' },
+  { key: 'declined', title: 'Declined' },
+];
+const STAGE_ICONS = {
+  sent: APPROVAL_ICONS.sent,
+  approved: APPROVAL_ICONS.approved,
+  declined: APPROVAL_ICONS.declined,
+  progress: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 4.5l5 5-9.5 9.5H5v-5zM12.5 6.5l5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+  done: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+const DONE_SHOWN = 20; // the most recent finished jobs
+
+async function renderApprovalsCard(show) {
+  const card = $('#approvals-card');
+  if (!show) return (card.hidden = true);
+  const reports = await db.listAllReports();
+  const counts = {};
+  for (const r of reports) {
+    const s = workStage(r);
+    if (s) counts[s] = (counts[s] || 0) + 1;
+  }
+  const parts = [
+    counts.sent && `${counts.sent} waiting`,
+    counts.approved && `${counts.approved} approved`,
+    counts.progress && `${counts.progress} in progress`,
+  ].filter(Boolean);
+  card.hidden = !cloudReady && !Object.keys(counts).length;
+  $('#approvals-card-detail').textContent = parts.length ? parts.join(' · ') : 'Proposals sent for approval and approved work show here.';
+}
+
+$('#approvals-card').addEventListener('click', () => (location.hash = '#/approvals'));
+
+async function renderApprovals() {
+  current = { kind: 'approvals', id: '', record: null };
+  setHeader({ title: 'Approvals and work', back: true });
+  const [reports, folders] = await Promise.all([db.listAllReports(), db.listAllFolders()]);
+  drawApprovals(reports, folders);
+  showView('approvals');
+  // Then ask the server about anything still waiting, and redraw if an answer came in.
+  const stale = reports.filter((r) => r.approval && Date.now() - (approvalChecked.get(r.approval.id) || 0) > 30000);
+  const changed = await refreshApprovals(stale).catch(() => false);
+  if (changed && current.kind === 'approvals') drawApprovals(await db.listAllReports(), folders);
+}
+
+function drawApprovals(reports, folders) {
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const where = (folderId) => {
+    const names = [];
+    for (let f = byId.get(folderId), n = 0; f && n < 50; f = byId.get(f.parentId), n++) names.unshift(f.name);
+    return names.join(' › ');
+  };
+  const groups = new Map(STAGES.map((s) => [s.key, []]));
+  for (const r of reports) {
+    const s = workStage(r);
+    if (s) groups.get(s).push(r);
+  }
+  const when = (r) => {
+    const a = r.approval || {};
+    const w = r.work || {};
+    return w.doneAt || w.startedAt || Date.parse(a.decidedAt || a.sentAt || '') || r.updatedAt || 0;
+  };
+  const out = [];
+  for (const { key, title } of STAGES) {
+    let list = groups.get(key).sort((x, y) => when(y) - when(x));
+    if (!list.length) continue;
+    const total = list.length;
+    if (key === 'done') list = list.slice(0, DONE_SHOWN);
+    const h = document.createElement('h2');
+    h.className = 'section-title';
+    h.textContent = key === 'done' && total > DONE_SHOWN ? `${title} · latest ${DONE_SHOWN} of ${total}` : `${title} · ${total}`;
+    const ul = document.createElement('ul');
+    ul.className = 'list';
+    ul.append(...list.map((r) => approvalRow(r, key, where(r.folderId))));
+    out.push(h, ul);
+  }
+  $('#approvals-list').replaceChildren(...out);
+  $('#approvals-empty').hidden = out.length > 0;
+}
+
+function approvalRow(r, stage, place) {
+  const a = r.approval || {};
+  const w = r.work || {};
+  const money = a.total ? formatMoney(a.total) : '';
+  const detail = {
+    sent: [`Sent to ${a.sentTo} ${a.sentAt ? shortTime(a.sentAt) : ''}`, a.viewedAt ? 'opened' : 'not opened yet'],
+    approved: [a.signerName ? `Approved by ${a.signerName}` : 'Approved', a.decidedAt ? shortTime(a.decidedAt) : ''],
+    progress: [w.startedAt ? `Started ${shortTime(w.startedAt)}` : 'In progress', a.signerName ? `approved by ${a.signerName}` : ''],
+    done: [w.doneAt ? `Done ${shortTime(w.doneAt)}` : 'Done'],
+    declined: [`Declined by ${a.signerName || a.sentTo}`, a.declineReason ? `“${a.declineReason}”` : ''],
+  }[stage];
+  const quick = {
+    approved: { label: 'Start', value: 'progress' },
+    progress: { label: 'Done', value: 'done' },
+  }[stage];
+  const li = row({
+    icon: `<span class="ico status ${stage}">${STAGE_ICONS[stage]}</span>`,
+    name: `${place ? place + ' · ' : ''}${r.name}`,
+    detail: [formatDate(r.date), money, ...detail].filter(Boolean).join(' · '),
+    href: reportHref(r.id),
+    action: quick && {
+      label: quick.label,
+      run: () => setWork(r, quick.value),
+    },
+    menuLabel: `Options for ${r.name}`,
+    onMenu: async () => {
+      const choice = await askAction(r.name, [
+        ...(a.status === 'approved' ? [{ label: 'Signed copy', value: 'copy' }] : []),
+        ...(a.status === 'sent' ? [{ label: 'Check for an answer', value: 'check' }] : []),
+        ...(stage !== 'sent' && stage !== 'declined' ? workActions(r) : []),
+        ...(stage === 'declined' ? [{ label: 'Send again', value: 'send' }, { label: 'Remove from this list', value: 'hide' }] : []),
+        { label: 'Open report', value: 'open' },
+      ]);
+      if (choice === 'copy') await showSignedCopy(r);
+      if (choice === 'check') {
+        await refreshApproval(r, false);
+        render();
+      }
+      if (choice.startsWith('work:')) await setWork(r, choice.slice(5));
+      if (choice === 'send') await sendForApproval(r);
+      if (choice === 'hide') {
+        await db.updateReport(r.id, { approval: { ...a, status: 'cancelled' } });
+        render();
+      }
+      if (choice === 'open') location.hash = reportHref(r.id);
+    },
+  });
+  return li;
+}
 
 // ---------- Signature ----------
 // Settings hold the default: 'signatureImage' (PNG Blob), 'signatureName', 'signatureRole',
@@ -2902,6 +3108,7 @@ function showView(kind) {
   $('#settings-view').hidden = kind !== 'settings';
   $('#profile-view').hidden = kind !== 'profile';
   $('#search-view').hidden = kind !== 'search';
+  $('#approvals-view').hidden = kind !== 'approvals';
   $('#fab').hidden = kind !== 'folder';
   document.body.classList.toggle('in-report', kind === 'report');
 }

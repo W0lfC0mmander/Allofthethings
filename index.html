@@ -46,6 +46,14 @@
         </span>
       </button>
 
+      <button id="approvals-card" class="company-card" hidden>
+        <span class="company-logo-box backup-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8.5 9l1.5 1.5L13 7.5M8.5 15l1.5 1.5 3-3M15 9.5h1.5M15 15.5h1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="row-text">
+          <span class="row-name">Approvals and work</span>
+          <span id="approvals-card-detail" class="row-detail"></span>
+        </span>
+      </button>
+
       <div id="property-photo" class="property-photo" hidden>
         <img id="property-photo-img" alt="Property photo" hidden>
         <div class="property-photo-body">
@@ -71,6 +79,11 @@
       <div id="report-groups"></div>
       <p id="folder-empty" class="empty" hidden>Nothing here yet. Tap <strong>New</strong> to add a folder or a wet check report.</p>
       <p id="app-version" class="version" hidden></p>
+    </section>
+
+    <section id="approvals-view" hidden>
+      <div id="approvals-list"></div>
+      <p id="approvals-empty" class="empty" hidden>Nothing here yet. Open a report, tap ⋮ and choose <strong>Send for approval</strong>, and it shows up here.</p>
     </section>
 
     <section id="search-view" hidden>
