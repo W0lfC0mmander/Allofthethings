@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { showDialog, askName, askAction, askConfirm, plural, formatDate, today, WATER_SOURCES } from './ui.js';
+import { showDialog, askName, askAction, askConfirm, plural, formatDate, today, WATER_SOURCES, SECTIONS, isSection, zoneName } from './ui.js';
 import { compressPhoto, compressLogo } from './photo.js';
 import { loadIssueList, saveIssueList, addNewDefaults, resetIssueList, findIssue, toPrice, formatMoney, findingPrice, buildEstimate, effectiveList, priceSnapshot, discountAmount, discountLabel } from './issues.js';
 import { buildReportPdf, pdfFileName, DEFAULT_ACCENT } from './pdf.js';
@@ -11,7 +11,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 43;
+const APP_VERSION = 44;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -678,7 +678,7 @@ async function newInFolder() {
     await db.setSetting('estimateDefault', details.estimate);
     const prices = priceSnapshot(await issueListFor(folderId)); // locked in for this report
     const { name, date, ...extra } = details;
-    const report = await db.createReport(folderId, name, date, { ...extra, prices });
+    const report = await db.createReport(folderId, name, date, { ...extra, prices, currentZone: SECTIONS[0] }); // a wet check starts at the controller
     location.hash = reportHref(report.id);
   }
 }
@@ -689,18 +689,22 @@ let photoUrls = []; // object URLs for thumbnails, revoked on each render
 
 // The zone a report is being worked in. New findings go into it unless changed.
 const zoneOf = (report) => (report.currentZone ?? '1');
-const zoneName = (z) => (z ? `Zone ${z}` : 'No zone');
 
-// Next or previous zone: steps the number at the end ("4" -> "5", "A3" -> "A4").
+// Next or previous zone: steps the number at the end ("4" -> "5", "A3" -> "A4"). The
+// Controller and Pump sections come before Zone 1: Controller -> Pump -> Zone 1 -> Zone 2.
 function stepZone(zone, delta) {
+  const s = SECTIONS.indexOf(zone);
+  if (s >= 0) return s + delta < 0 ? SECTIONS[0] : SECTIONS[s + delta] || '1';
   const m = zone.match(/^(.*?)(\d+)$/);
   if (!m) return zone ? zone : '1';
+  if (!m[1] && Number(m[2]) + delta < 1) return SECTIONS[SECTIONS.length - 1];
   return m[1] + Math.max(1, Number(m[2]) + delta);
 }
 
 const byZone = (a, b) => {
   if (!a) return 1; // findings with no zone go last
   if (!b) return -1;
+  if (isSection(a) || isSection(b)) return (isSection(a) ? SECTIONS.indexOf(a) : 99) - (isSection(b) ? SECTIONS.indexOf(b) : 99);
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 };
 
@@ -750,8 +754,10 @@ async function renderReport(id) {
 
   const zone = zoneOf(report);
   $('#zone-value').textContent = zoneName(zone);
-  $('#add-finding-label').textContent = zone ? `Add finding to Zone ${zone}` : 'Add finding';
-  $('#zone-prev').disabled = !/\d+$/.test(zone) || /^(.*?\D)?0*1$/.test(zone);
+  $('#add-finding-label').textContent = zone ? `Add finding to ${zoneName(zone)}` : 'Add finding';
+  $('#mark-fail').hidden = isSection(zone); // its X means a valve that won't open
+  // Back stops at the controller, and at 1 for lettered zones like A1 (plain Zone 1 goes back to the pump).
+  $('#zone-prev').disabled = zone === SECTIONS[0] || (!isSection(zone) && (!/\d+$/.test(zone) || /^.*\D0*1$/.test(zone)));
 
   const findings = await db.listFindings(id);
   for (const u of photoUrls) URL.revokeObjectURL(u);
@@ -2315,7 +2321,11 @@ async function fillIssues(selected) {
   const shown = (i) => !i.off || i.name === selected;
   const listed = list.groups.some((g) => g.issues.some((i) => i.name === selected && shown(i)));
   if (selected && !listed) options.push(new Option(selected, selected));
-  for (const g of list.groups) {
+  // In the Controller or Pump section, its own issues come first.
+  const zone = form.zone.value.trim();
+  const first = { Controller: 'Controller and sensors', Pump: 'Pump' }[zone];
+  const groups = first ? [...list.groups].sort((a, b) => (b.name === first) - (a.name === first)) : list.groups;
+  for (const g of groups) {
     const items = g.issues.filter(shown).map((i) => new Option(i.name, i.name));
     if (!items.length) continue;
     if (!g.name) {
@@ -2351,8 +2361,8 @@ async function openFindingForm(finding) {
   form.more = finding && finding.morePhotos ? [...finding.morePhotos] : [];
   renderMorePhotos();
   setPhoto(finding ? finding.photo : null, finding ? finding.stamp || null : null);
-  await fillIssues(finding ? finding.issue : '');
   form.zone.value = finding ? finding.zone : zoneOf(current.record);
+  await fillIssues(finding ? finding.issue : '');
   form.note.value = finding ? finding.note : '';
   form.priceBox.hidden = !current.record.estimate;
   form.price.value = finding && finding.price != null ? finding.price.toFixed(2) : '';

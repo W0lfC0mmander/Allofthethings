@@ -60,7 +60,19 @@
       "name": "Controller and sensors",
       "issues": [
         "Controller issue",
+        "Short circuit alert",
+        "Master valve or pump start alert",
         "Rain or weather sensor issue"
+      ]
+    },
+    {
+      "name": "Pump",
+      "issues": [
+        "Pump not starting",
+        "Pump low pressure",
+        "Pump losing prime",
+        "Pump leaking",
+        "Pump issue"
       ]
     },
     {

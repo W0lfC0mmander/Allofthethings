@@ -8,7 +8,7 @@ Done so far:
 - Findings in a report: a main photo (camera or library, compressed to 1600px JPEG on save) plus up to 6 more photos (findings saved earlier with up to 8 keep them), an issue, a zone and an optional note. Extra photos print in rows of three under the finding in the PDF.
 - Location box under the note on each finding: GPS coordinates with Map and Copy buttons, plus accuracy and time. Camera photos use the phone's location; library photos use what the photo itself recorded.
 - Coordinates list for a report (report menu): every finding's coordinates, with Map, Copy and Copy all.
-- Zone-by-zone workflow: each report has a current zone (bottom bar, with next/previous buttons) that new findings go into, and findings are grouped by zone.
+- Zone-by-zone workflow: each report has a current zone (bottom bar, with next/previous buttons) that new findings go into, and findings are grouped by zone. Before Zone 1 come a **Controller** and a **Pump** section (Controller → Pump → Zone 1 with the arrows); new reports start at the controller, those sections list the controller or pump issues first, and the X mark is hidden there.
 
 - Company logo, name and PDF accent color (Settings, via the gear on the home screen; blue by default) and a property photo (top-level property folders) for the PDF cover page.
 - Export PDF (report screen): a cover page, then property, date, findings by zone with photo, issue, zone, note and location (underlined coordinates open Google Maps on any device), plus a coordinates list. Built on the device with jsPDF (js/vendor), so it works offline.

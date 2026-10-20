@@ -50,7 +50,14 @@ export async function saveIssueList(list) {
 // Issues added to data/issues.json after people had already edited their own list. A saved
 // list never picks up new defaults by itself, so each one here is added to it once (unless it
 // is already there); 'issuesAdded' remembers which, so deleting one later keeps it deleted.
-const NEW_DEFAULTS = [{ name: 'Broken nozzle', group: 'Head and nozzle adjustments', before: 'Clogged nozzle' }];
+// before: the issue it goes in front of (none = end of the group); afterGroup: where a group
+// that doesn't exist yet is created.
+const NEW_DEFAULTS = [
+  { name: 'Broken nozzle', group: 'Head and nozzle adjustments', before: 'Clogged nozzle' },
+  { name: 'Short circuit alert', group: 'Controller and sensors', before: 'Rain or weather sensor issue' },
+  { name: 'Master valve or pump start alert', group: 'Controller and sensors', before: 'Rain or weather sensor issue' },
+  ...['Pump not starting', 'Pump low pressure', 'Pump losing prime', 'Pump leaking', 'Pump issue'].map((name) => ({ name, group: 'Pump', afterGroup: 'Controller and sensors' })),
+];
 
 export async function addNewDefaults() {
   const saved = await db.getSetting('issueList');
@@ -62,9 +69,17 @@ export async function addNewDefaults() {
     for (const d of todo) {
       if (findIssue(list, d.name)) continue;
       let g = list.groups.find((x) => x.name === d.group);
-      if (!g) list.groups.push((g = { name: d.group, issues: [] }));
-      const at = g.issues.findIndex((i) => i.name === d.before);
-      g.issues.splice(at < 0 ? 0 : at, 0, { name: d.name, price: null, off: false });
+      if (!g) {
+        g = { name: d.group, issues: [] };
+        const after = list.groups.findIndex((x) => x.name === d.afterGroup);
+        list.groups.splice(after < 0 ? list.groups.length : after + 1, 0, g);
+      }
+      const item = { name: d.name, price: null, off: false };
+      if (!d.before) g.issues.push(item);
+      else {
+        const at = g.issues.findIndex((i) => i.name === d.before);
+        g.issues.splice(at < 0 ? 0 : at, 0, item);
+      }
     }
     await saveIssueList(list);
   }

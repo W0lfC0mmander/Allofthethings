@@ -1,7 +1,7 @@
 // Builds the wet check report PDF on the device (no upload), using jsPDF.
 
 import { coordsText, stampDetails } from './location.js';
-import { formatDate, WATER_SOURCES } from './ui.js';
+import { formatDate, WATER_SOURCES, isSection } from './ui.js';
 import { formatMoney } from './issues.js';
 
 let libPromise = null;
@@ -244,7 +244,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
 
   const total = groups.reduce((n, [, items]) => n + items.filter((f) => f.mark !== 'ok').length, 0); // zones marked OK aren't findings
   const findingPrices = new Map(estimate ? estimate.prices : []);
-  const zones = groups.filter(([z]) => z).length;
+  const zones = groups.filter(([z]) => z && !isSection(z)).length; // Controller and Pump aren't zones
   const located = groups.reduce((n, [, items]) => n + items.filter((f) => f.stamp && f.stamp.lat != null).length, 0);
 
   let logoImg = null;

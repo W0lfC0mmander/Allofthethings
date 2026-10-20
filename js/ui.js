@@ -62,6 +62,11 @@ export const WATER_SOURCES = {
   pump: 'Pump',
 };
 
+// Sections a wet check covers before Zone 1, kept in the zone field under these names.
+export const SECTIONS = ['Controller', 'Pump'];
+export const isSection = (z) => SECTIONS.includes(z);
+export const zoneName = (z) => (isSection(z) ? z : z ? `Zone ${z}` : 'No zone');
+
 export function plural(n, word) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }

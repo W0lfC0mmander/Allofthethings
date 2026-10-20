@@ -4,7 +4,7 @@
 
 import * as db from './db.js';
 import { makeZip, readZip, isZip } from './zip.js';
-import { WATER_SOURCES } from './ui.js';
+import { WATER_SOURCES, zoneName } from './ui.js';
 
 const APP = 'wetcheck';
 const FORMAT = 1;
@@ -161,7 +161,7 @@ export async function createBackup(appVersion, folderId = null, { makePdf, progr
     }
     const findings = (findingsBy.get(report.id) || []).sort((a, b) => a.createdAt - b.createdAt);
     findings.forEach((f, i) => {
-      const label = fileSafe(`${String(i + 1).padStart(2, '0')} ${f.zone ? `Zone ${f.zone}` : 'No zone'} - ${f.issue}`);
+      const label = fileSafe(`${String(i + 1).padStart(2, '0')} ${zoneName(f.zone)} - ${f.issue}`);
       if (f.photo instanceof Blob) add(`${base}Photos/${label}.${extOf(f.photo)}`, f.photo);
       (f.morePhotos || []).forEach((b, k) => {
         if (b instanceof Blob) add(`${base}Photos/${label} (photo ${k + 2}).${extOf(b)}`, b);
