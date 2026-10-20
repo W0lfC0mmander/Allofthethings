@@ -119,6 +119,13 @@
           <span id="settings-signature-detail" class="row-detail"></span>
         </span>
       </button>
+      <button id="settings-cloud" class="company-card">
+        <span class="company-logo-box backup-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4zM4 7l8 6 8-6M14 17l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="row-text">
+          <span class="row-name">Online approvals</span>
+          <span id="settings-cloud-detail" class="row-detail"></span>
+        </span>
+      </button>
       <button id="settings-backup-card" class="company-card">
         <span class="company-logo-box backup-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 9.1 4.5 4.5 0 0 0 7 18zm5-8v6m0-6l-2.5 2.5M12 10l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -197,6 +204,13 @@
           Coordinates
         </button>
       </div>
+      <button id="approval-card" class="company-card approval-card" hidden>
+        <span id="approval-icon" class="company-logo-box backup-icon"></span>
+        <span class="row-text">
+          <span id="approval-name" class="row-name"></span>
+          <span id="approval-detail" class="row-detail"></span>
+        </span>
+      </button>
       <button id="estimate-bar" class="estimate-bar" hidden>
         <span class="estimate-caption">Repair estimate</span>
         <span id="estimate-total" class="estimate-total">$0.00</span>
@@ -607,6 +621,43 @@
       <div class="actions">
         <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Cancel</button>
         <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="cloud-dialog">
+    <form id="cloud-form">
+      <h2>Online approvals</h2>
+      <p id="cloud-text" class="hint">Sign in with the account set up in Supabase to email proposals that customers sign online.</p>
+      <div id="cloud-fields">
+        <label class="label" for="cloud-email">Email</label>
+        <input id="cloud-email" class="field" type="email" autocomplete="username" autocapitalize="off" maxlength="200" required>
+        <label class="label" for="cloud-password">Password</label>
+        <input id="cloud-password" class="field" type="password" autocomplete="current-password" maxlength="200" required>
+      </div>
+      <p id="cloud-error" class="hint warn" hidden></p>
+      <div class="actions">
+        <button id="cloud-signout" type="button" class="btn danger-text start" hidden>Sign out</button>
+        <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Close</button>
+        <button id="cloud-submit" type="submit" class="btn primary">Sign in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="approval-dialog">
+    <form id="approval-form">
+      <h2>Send for approval</h2>
+      <p class="hint">Emails the customer a link to review this report's PDF and sign to approve it. You'll get the signed copy by email, and it shows on this report.</p>
+      <label class="label" for="approval-name-input">Customer name</label>
+      <input id="approval-name-input" class="field" type="text" autocomplete="off" autocapitalize="words" maxlength="120">
+      <label class="label" for="approval-email">Customer email</label>
+      <input id="approval-email" class="field" type="email" autocomplete="off" autocapitalize="off" maxlength="200" required>
+      <label class="label" for="approval-message">Message <span class="optional">(optional)</span></label>
+      <textarea id="approval-message" class="field" rows="3" maxlength="2000" placeholder="e.g. Here are the repairs we found during this month's wet check."></textarea>
+      <p id="approval-error" class="hint warn" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Cancel</button>
+        <button id="approval-submit" type="submit" class="btn primary">Send</button>
       </div>
     </form>
   </dialog>

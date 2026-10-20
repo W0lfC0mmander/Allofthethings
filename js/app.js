@@ -5,13 +5,14 @@ import { loadIssueList, saveIssueList, addNewDefaults, resetIssueList, findIssue
 import { buildReportPdf, pdfFileName, DEFAULT_ACCENT } from './pdf.js';
 import { createBackup, readBackup, restoreBackup } from './backup.js';
 import { drawSignature } from './signature.js';
+import { cloudReady, signedInEmail, signIn, signOut, callApprovals } from './cloud.js';
 import { getPosition, readExif, coordsText, mapUrl, stampDetails, copyText, formatTime } from './location.js';
 
 const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 50;
+const APP_VERSION = 51;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -409,7 +410,7 @@ let companyLogoUrl = null;
 async function renderSettings() {
   current = { kind: 'settings', id: '', record: null };
   setHeader({ title: 'Settings', back: true });
-  await Promise.all([renderCompanyCard(), renderIssuesCard(), renderDisclaimerCard(), renderSignatureCard(), renderBackupCard(false), renderStorageCard()]);
+  await Promise.all([renderCompanyCard(), renderIssuesCard(), renderDisclaimerCard(), renderSignatureCard(), renderCloudCard(), renderBackupCard(false), renderStorageCard()]);
   $('#settings-version').textContent = `App version ${APP_VERSION}`;
   showView('settings');
 }
@@ -595,13 +596,15 @@ function folderRow(folder) {
   });
 }
 
-const reportDetail = (r) => [formatDate(r.date), groupOf(r)].filter(Boolean).join(' · ');
+const APPROVAL_TAGS = { sent: 'Awaiting approval', approved: 'Approved', declined: 'Declined' };
+const approvalTag = (r) => (r.approval && APPROVAL_TAGS[r.approval.status]) || '';
+const reportDetail = (r) => [formatDate(r.date), groupOf(r), approvalTag(r)].filter(Boolean).join(' · ');
 
 function reportRow(report, grouped = false) {
   return row({
     icon: REPORT_ICON,
     name: report.name,
-    detail: grouped ? formatDate(report.date) : reportDetail(report),
+    detail: grouped ? [formatDate(report.date), approvalTag(report)].filter(Boolean).join(' · ') : reportDetail(report),
     href: reportHref(report.id),
     menuLabel: `Options for ${report.name}`,
     onMenu: () => reportMenu(report),
@@ -639,6 +642,7 @@ async function folderMenu(folder) {
 async function reportMenu(report) {
   const action = await askAction(report.name, [
     { label: 'Export PDF', value: 'pdf' },
+    ...(cloudReady ? [{ label: report.approval && report.approval.status === 'sent' ? 'Send for approval again' : 'Send for approval', value: 'approval' }] : []),
     { label: 'Coordinates list', value: 'coords' },
     { label: report.estimate ? 'Turn off repair estimate' : 'Turn on repair estimate', value: 'estimate' },
     ...(report.estimate ? [{ label: 'Use current prices', value: 'prices' }] : []),
@@ -651,6 +655,7 @@ async function reportMenu(report) {
   }
   if (action === 'prices') await refreshPrices(report);
   if (action === 'pdf') await exportPdf(report);
+  if (action === 'approval') await sendForApproval(report);
   if (action === 'coords') await showCoordinates(report);
   if (action === 'edit') await editReport(report);
   if (action === 'delete') await removeReport(report);
@@ -764,6 +769,8 @@ async function renderReport(id) {
   photoUrls = [];
   const list = report.estimate ? await issueListFor(report.folderId) : null;
   renderEstimateBar(report, findings, list);
+  renderApprovalCard(report);
+  refreshApproval(report);
 
   // Zones fold up so the list stays short: the zone being worked in is open, the rest show
   // just a heading until tapped. A zone opened or closed by hand stays that way until the
@@ -1059,26 +1066,14 @@ async function reportPdf(report) {
     groups: groupByZone(findings),
     zoneName,
   });
-  return { blob, name: pdfFileName(property, report) };
+  return { blob, name: pdfFileName(property, report), estimate, itemized: ex.itemized };
 }
 
 // Before exporting, the report is signed: it starts from the default signature in Settings
 // (or what was used last time for this report) and can be changed for this report only.
 async function exportPdf(report) {
-  const def = await defaultSignature();
-  const saved = report.signature;
-  if (def.on || saved) {
-    const start = saved
-      ? { on: !saved.off, image: report.signatureImage || null, name: saved.name || '', role: saved.role || '', date: saved.date || today() }
-      : { on: true, image: def.image, name: def.name, role: def.role, date: today() };
-    const r = await askSignature({ mode: 'report', ...start, defaults: def });
-    if (!r) return;
-    report = await db.updateReport(report.id, {
-      signature: { off: !r.on, name: r.name, role: r.role, date: r.date },
-      signatureImage: r.on ? r.image : null,
-    });
-    if (current.kind === 'report' && current.id === report.id) current.record = report;
-  }
+  report = await confirmSignature(report);
+  if (!report) return;
   return deliverFile({
     working: 'Making PDF…',
     workingText: 'This takes a few seconds for reports with lots of photos.',
@@ -1088,6 +1083,265 @@ async function exportPdf(report) {
     build: () => reportPdf(report),
   });
 }
+
+// Resolves with the report as signed, or null if cancelled. Without a default signature or
+// one saved on the report, it's returned unchanged.
+async function confirmSignature(report, submitLabel = 'Export PDF') {
+  const def = await defaultSignature();
+  const saved = report.signature;
+  if (!def.on && !saved) return report;
+  const start = saved
+    ? { on: !saved.off, image: report.signatureImage || null, name: saved.name || '', role: saved.role || '', date: saved.date || today() }
+    : { on: true, image: def.image, name: def.name, role: def.role, date: today() };
+  const r = await askSignature({ mode: 'report', ...start, defaults: def, submitLabel });
+  if (!r) return null;
+  report = await db.updateReport(report.id, {
+    signature: { off: !r.on, name: r.name, role: r.role, date: r.date },
+    signatureImage: r.on ? r.image : null,
+  });
+  if (current.kind === 'report' && current.id === report.id) current.record = report;
+  return report;
+}
+
+// ---------- Online approvals ----------
+// "Send for approval" emails the customer a link to approve.html, where they review the PDF
+// and sign; the "approvals" Edge Function (supabase/) keeps the record, makes the signed PDF
+// and emails it to both sides. The report keeps report.approval { id, status: 'sent' |
+// 'approved' | 'declined' | 'cancelled', sentTo, customerName, sentAt, viewedAt, decidedAt,
+// signerName, declineReason, pdfName } and, once signed, report.approvalPdf (Blob, kept
+// top-level so db.put copies it).
+
+const APPROVAL_ICONS = {
+  sent: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  approved: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 12.5l2.7 2.7L16 9.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  declined: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 9l6 6m0-6l-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+};
+const shortTime = (iso) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+async function renderCloudCard() {
+  const email = signedInEmail();
+  $('#settings-cloud-detail').textContent = !cloudReady
+    ? 'Not set up yet.'
+    : email ? `Signed in as ${email}. Send a report from its ⋮ menu.` : 'Sign in to email proposals that customers sign online.';
+}
+
+$('#settings-cloud').addEventListener('click', async () => {
+  await cloudDialog();
+  if (current.kind === 'settings') renderCloudCard();
+});
+
+// Sign in or out. Resolves true when signed in.
+async function cloudDialog() {
+  const dialog = $('#cloud-dialog');
+  const err = $('#cloud-error');
+  const email = signedInEmail();
+  const canSignIn = cloudReady && !email;
+  err.hidden = true;
+  $('#cloud-fields').hidden = $('#cloud-submit').hidden = !canSignIn;
+  $('#cloud-email').required = $('#cloud-password').required = canSignIn;
+  $('#cloud-signout').hidden = !email;
+  $('#cloud-text').textContent = !cloudReady
+    ? 'Online approvals need the app connected to its Supabase project first.'
+    : email
+      ? `Signed in as ${email}. Send a report for approval from its ⋮ menu.`
+      : 'Sign in with the account set up in Supabase to email proposals that customers sign online.';
+  $('#cloud-password').value = '';
+  $('#cloud-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const button = $('#cloud-submit');
+    button.disabled = true;
+    button.textContent = 'Signing in…';
+    try {
+      await signIn($('#cloud-email').value.trim(), $('#cloud-password').value);
+      dialog.close('ok');
+    } catch (x) {
+      err.textContent = x.message;
+      err.hidden = false;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Sign in';
+    }
+  };
+  $('#cloud-signout').onclick = () => {
+    signOut();
+    dialog.close('cancel');
+    showToast('Signed out of online approvals.', 'ok');
+  };
+  await showDialog(dialog);
+  return !!signedInEmail();
+}
+
+// Asks who to send to, confirms the technician signature, then sends the report's PDF.
+async function sendForApproval(report) {
+  if (!signedInEmail() && !(await cloudDialog())) return;
+  const path = await db.getPath(report.folderId);
+  const contact = (path.length && path[0].profile && path[0].profile.contact) || {};
+  const prev = report.approval;
+  $('#approval-name-input').value = (prev && prev.customerName) || contact.name || '';
+  $('#approval-email').value = (prev && prev.sentTo) || contact.email || '';
+  $('#approval-message').value = '';
+  $('#approval-error').hidden = true;
+  $('#approval-form').onsubmit = (e) => {
+    e.preventDefault();
+    $('#approval-dialog').close('ok');
+  };
+  if ((await showDialog($('#approval-dialog'))) !== 'ok') return;
+  const customerName = $('#approval-name-input').value.trim();
+  const customerEmail = $('#approval-email').value.trim();
+  const message = $('#approval-message').value.trim();
+  report = await confirmSignature(report, 'Send');
+  if (!report) return;
+
+  const dialog = $('#pdf-dialog');
+  $('#pdf-share').hidden = $('#pdf-download').hidden = $('#pdf-open').hidden = true;
+  $('#pdf-title').textContent = 'Sending…';
+  $('#pdf-text').textContent = 'Making the PDF and emailing it to the customer.';
+  const closed = showDialog(dialog);
+  try {
+    const [pdf, logo, companyName, accent] = await Promise.all([
+      reportPdf(report),
+      db.getSetting('companyLogo'),
+      db.getSetting('companyName'),
+      db.getSetting('accentColor'),
+    ]);
+    const e = pdf.estimate;
+    const meta = {
+      customerName,
+      customerEmail,
+      message,
+      companyName: companyName || '',
+      accent: accent || DEFAULT_ACCENT,
+      property: path.map((f) => f.name).join(', '),
+      reportName: report.name,
+      reportDate: report.date,
+      pdfName: pdf.name,
+      // What the approval page lists; with individual prices off, only the total shows.
+      estimate: e && e.lines.length ? {
+        lines: e.lines.map((l) => ({ issue: l.issue, qty: l.qty, amount: pdf.itemized ? l.amount : null })),
+        subtotal: e.subtotal,
+        discount: e.discount,
+        discountLabel: e.discountLabel,
+        total: e.total,
+        unpriced: e.unpriced,
+        itemized: pdf.itemized,
+      } : null,
+      replaces: prev && prev.status === 'sent' ? prev.id : null,
+    };
+    const form = new FormData();
+    form.append('meta', JSON.stringify(meta));
+    form.append('pdf', pdf.blob, pdf.name);
+    if (logo instanceof Blob) form.append('logo', logo, 'logo');
+    const r = await callApprovals(form);
+    report = await db.updateReport(report.id, {
+      approval: { id: r.id, status: 'sent', sentTo: r.sentTo, customerName, sentAt: r.sentAt },
+      approvalPdf: null,
+    });
+    $('#pdf-title').textContent = 'Sent for approval';
+    $('#pdf-text').textContent = `${r.sentTo} will get an email with a link to review and sign. You’ll get an email when they answer, and the signed copy shows on this report.`;
+  } catch (x) {
+    $('#pdf-title').textContent = 'Couldn’t send';
+    $('#pdf-text').textContent = x && x.message ? x.message : 'Something went wrong. Try again.';
+  }
+  await closed;
+  if (current.kind === 'report' && current.id === report.id) render();
+}
+
+function renderApprovalCard(report) {
+  const a = report.approval;
+  const card = $('#approval-card');
+  card.hidden = !a || !APPROVAL_ICONS[a.status];
+  if (card.hidden) return;
+  card.dataset.status = a.status;
+  $('#approval-icon').innerHTML = APPROVAL_ICONS[a.status];
+  if (a.status === 'approved') {
+    $('#approval-name').textContent = `Approved by ${a.signerName || a.sentTo}`;
+    $('#approval-detail').textContent = `Signed ${shortTime(a.decidedAt)}. Tap for the signed copy.`;
+  } else if (a.status === 'declined') {
+    $('#approval-name').textContent = `Declined by ${a.signerName || a.sentTo}`;
+    $('#approval-detail').textContent = [shortTime(a.decidedAt), a.declineReason ? `“${a.declineReason}”` : ''].filter(Boolean).join(' · ');
+  } else {
+    $('#approval-name').textContent = 'Waiting for approval';
+    $('#approval-detail').textContent = `Sent to ${a.sentTo} ${shortTime(a.sentAt)} · ${a.viewedAt ? `opened ${shortTime(a.viewedAt)}` : 'not opened yet'}`;
+  }
+}
+
+// Asks the server where the report's request stands and keeps the answer (and the signed
+// PDF) on the report. Quiet checks (on opening a report) run at most every 30 seconds.
+const approvalChecked = new Map();
+async function refreshApproval(report, quiet = true) {
+  const a = report.approval;
+  if (!a || !cloudReady || !signedInEmail() || !navigator.onLine) return report;
+  if (a.status !== 'sent' && !(a.status === 'approved' && !report.approvalPdf)) return report;
+  if (quiet && Date.now() - (approvalChecked.get(a.id) || 0) < 30000) return report;
+  approvalChecked.set(a.id, Date.now());
+  try {
+    const { items } = await callApprovals({ action: 'status', ids: [a.id] });
+    const it = items && items[0];
+    if (!it) return report;
+    const patch = {
+      approval: { ...a, status: it.status, viewedAt: it.viewedAt, decidedAt: it.decidedAt, signerName: it.signerName, declineReason: it.declineReason, pdfName: it.signedPdfName },
+    };
+    if (it.status === 'approved' && it.signedPdfUrl && !report.approvalPdf) {
+      const res = await fetch(it.signedPdfUrl);
+      if (res.ok) patch.approvalPdf = new Blob([await res.arrayBuffer()], { type: 'application/pdf' });
+    }
+    report = await db.updateReport(report.id, patch);
+    if (current.kind === 'report' && current.id === report.id) {
+      current.record = report;
+      renderApprovalCard(report);
+      $('#subtitle').textContent = reportDetail(report);
+    }
+    if (a.status === 'sent' && it.status === 'approved') showToast(`${it.signerName || it.sentTo} approved ${report.name}.`, 'ok');
+    if (a.status === 'sent' && it.status === 'declined') showToast(`${it.signerName || it.sentTo} declined ${report.name}.`);
+  } catch (x) {
+    if (!quiet) showToast(x.message);
+  }
+  return report;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && current && current.kind === 'report') refreshApproval(current.record);
+});
+
+$('#approval-card').addEventListener('click', async () => {
+  let report = current.record;
+  const a = report.approval;
+  if (!a) return;
+  if (a.status === 'approved') {
+    return deliverFile({
+      working: 'Getting the signed copy…',
+      workingText: '',
+      ready: 'Signed copy',
+      failed: 'Couldn’t get the signed copy',
+      canOpen: true,
+      build: async () => {
+        if (!(report.approvalPdf instanceof Blob)) report = await refreshApproval(report, false);
+        if (!(report.approvalPdf instanceof Blob)) throw new Error('The signed copy hasn’t downloaded to this phone yet. Try again when you’re online.');
+        return { blob: report.approvalPdf, name: a.pdfName || pdfFileName([], report).replace(/\.pdf$/i, ' - signed.pdf'), detail: `Signed by ${a.signerName}, with its signature certificate on the last page` };
+      },
+    });
+  }
+  const action = await askAction(a.status === 'sent' ? 'Waiting for approval' : 'Declined', [
+    ...(a.status === 'sent' ? [{ label: 'Check for an answer', value: 'check' }] : []),
+    { label: 'Send again', value: 'send' },
+    ...(a.status === 'sent' ? [{ label: 'Cancel the request', value: 'cancel', danger: true }] : []),
+  ]);
+  if (action === 'check') {
+    report = await refreshApproval(report, false);
+    if (report.approval.status === 'sent') showToast(report.approval.viewedAt ? 'Opened, but not answered yet.' : 'Not opened yet.', 'ok');
+  }
+  if (action === 'send') await sendForApproval(report);
+  if (action === 'cancel') {
+    if (!(await askConfirm('Cancel the request', `The link sent to ${a.sentTo} will stop working.`, 'Cancel request'))) return;
+    try {
+      await callApprovals({ action: 'cancel', id: a.id });
+      current.record = await db.updateReport(report.id, { approval: { ...a, status: 'cancelled' } });
+      render();
+    } catch (x) {
+      showToast(x.message);
+    }
+  }
+});
 
 // ---------- Signature ----------
 // Settings hold the default: 'signatureImage' (PNG Blob), 'signatureName', 'signatureRole',
@@ -1122,14 +1376,14 @@ function showSignatureImage(img, empty, blob) {
 
 // mode 'settings' edits the default; mode 'report' signs one report before export.
 // Resolves with { on, image, name, role, date } or null if cancelled.
-async function askSignature({ mode, on, image, name, role, date = today(), defaults = null }) {
+async function askSignature({ mode, on, image, name, role, date = today(), defaults = null, submitLabel = 'Export PDF' }) {
   const forReport = mode === 'report';
   $('#signature-title').textContent = forReport ? 'Sign this report' : 'Technician signature';
   $('#signature-hint').textContent = forReport
     ? 'Changes here apply to this report only. Your default signature is set in Settings.'
     : 'Your default signature. Before each export you can sign again or change it for that report.';
   $('#signature-enabled-label').textContent = forReport ? 'Include a signature on this report' : 'Sign reports when exporting';
-  $('#signature-submit').textContent = forReport ? 'Export PDF' : 'Save';
+  $('#signature-submit').textContent = forReport ? submitLabel : 'Save';
   $('#signature-date-box').hidden = !forReport;
   const hasDefault = !!(defaults && (defaults.image || defaults.name));
   $('#signature-default').hidden = !forReport || !hasDefault;

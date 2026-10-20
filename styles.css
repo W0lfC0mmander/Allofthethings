@@ -773,3 +773,10 @@ details.zone-group:not([open]) > .section-title { margin-top: 0; }
 #export-dialog .check .hint { font-weight: 400; margin: 0; }
 #export-dialog .check.sub { margin-left: 32px; }
 #export-dialog .check input:disabled + span { opacity: .5; }
+
+/* Online approval status on a report */
+.approval-card { border: 1px solid var(--line); }
+.approval-card[data-status="approved"] { border-color: #2e7d32; }
+.approval-card[data-status="approved"] .backup-icon { color: #2e7d32; }
+.approval-card[data-status="declined"] .backup-icon { color: var(--danger); }
+.approval-card[data-status="sent"] .backup-icon { color: #b26a00; }

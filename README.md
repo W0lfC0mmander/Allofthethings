@@ -45,6 +45,10 @@ Each report has an optional **Include a repair estimate** checkbox (also in the 
 ## PDF templates
 
 Each property profile has an **Export settings** section that picks how that property's reports export: **Full report** (cover page, each zone on its own page with large photos, summary table, estimate), **Compact** (short cover, one row per finding with a small photo) or **Estimate / proposal** (opens with the proposed repairs and a customer approval signature block, findings after). Checkboxes turn finding photos, prices and estimate, and GPS locations on or off. With prices on, **Individual prices** off lists the repairs and quantities with only the total price (also leaving the price off each finding). The proposal prices every finding even when the report's estimate is off, unless prices are turned off. Every template ends with a customer approval block whose signature, date and printed name lines are fillable PDF fields, so the customer can sign electronically by typing in any PDF app. Resetting a profile keeps its export settings.
+## Online approvals
+
+From a report's ⋮ menu, **Send for approval** emails the customer a link to review the PDF and sign it online, either typed or drawn. They can also decline. The report shows whether it's waiting, opened, approved or declined. Once it's approved, tap the card for the signed PDF, which ends with a signature certificate page. The signed copy is also emailed to both of you and included in backups. Sign in under **Settings → Online approvals**. This needs the one-time Supabase and Resend setup in [`supabase/README.md`](supabase/README.md).
+
 ## Troubleshooting disclaimer
 
 Each finding has an optional checkbox that adds a troubleshooting disclaimer, shown on the finding and in the PDF. The wording defaults to "*Troubleshooting required. Additional proposals may be required to complete this repair." and can be edited and saved from the finding form.

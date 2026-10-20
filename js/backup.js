@@ -159,6 +159,8 @@ export async function createBackup(appVersion, folderId = null, { makePdf, progr
         pdfsFailed++;
       }
     }
+    // The customer's signed copy from an online approval.
+    if (report.approvalPdf instanceof Blob) add(base + 'Signed approval.pdf', report.approvalPdf);
     const findings = (findingsBy.get(report.id) || []).sort((a, b) => a.createdAt - b.createdAt);
     findings.forEach((f, i) => {
       const label = fileSafe(`${String(i + 1).padStart(2, '0')} ${zoneName(f.zone)} - ${f.issue}`);
