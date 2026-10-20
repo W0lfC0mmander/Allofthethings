@@ -11,7 +11,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 45;
+const APP_VERSION = 46;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -2317,14 +2317,17 @@ async function fillIssues(selected) {
   const placeholder = new Option('Choose an issue', '');
   placeholder.disabled = true;
   const options = [placeholder];
-  // Keep an issue that has since been turned off or removed, so editing doesn't lose it.
-  const shown = (i) => !i.off || i.name === selected;
-  const listed = list.groups.some((g) => g.issues.some((i) => i.name === selected && shown(i)));
-  if (selected && !listed) options.push(new Option(selected, selected));
-  // In the Controller or Pump section, its own issues come first.
+  // Each section gets its own short list: the Controller section only the controller issues,
+  // the Pump section only the pump issues, and zones everything else. "Other" shows everywhere.
   const zone = form.zone.value.trim();
-  const first = { Controller: 'Controller and sensors', Pump: 'Pump' }[zone];
-  const groups = first ? [...list.groups].sort((a, b) => (b.name === first) - (a.name === first)) : list.groups;
+  const own = { Controller: 'Controller and sensors', Pump: 'Pump' };
+  const sectionGroups = Object.values(own);
+  const groups = list.groups.filter((g) => g.name === 'Other' || (own[zone] ? g.name === own[zone] : !sectionGroups.includes(g.name)));
+  // Keep an issue that has since been turned off, removed, or is from another section's list,
+  // so editing doesn't lose it.
+  const shown = (i) => !i.off || i.name === selected;
+  const listed = groups.some((g) => g.issues.some((i) => i.name === selected && shown(i)));
+  if (selected && !listed) options.push(new Option(selected, selected));
   for (const g of groups) {
     const items = g.issues.filter(shown).map((i) => new Option(i.name, i.name));
     if (!items.length) continue;
@@ -2350,6 +2353,11 @@ function updatePriceHint() {
   else form.priceHint.textContent = 'This issue has no price yet. Type one here, or set it in Settings or the property profile.';
 }
 form.issue.addEventListener('change', updatePriceHint);
+// Typing Controller or Pump (or a zone) in the Zone box switches to that section's issues.
+form.zone.addEventListener('change', async () => {
+  await fillIssues(form.issue.value);
+  updatePriceHint();
+});
 
 async function openFindingForm(finding) {
   form.title.textContent = finding ? 'Edit finding' : 'New finding';
