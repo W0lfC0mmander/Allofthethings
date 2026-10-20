@@ -185,7 +185,7 @@ function openTestDb() {
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error('Close other Wet Check tabs and try again.'));
+    req.onblocked = () => reject(new Error('Close other Zone Sense tabs and try again.'));
   });
 }
 
@@ -305,7 +305,7 @@ function showVerdict() {
 
 function resultsText() {
   const lines = [
-    `Wet Check storage test, ${new Date().toLocaleString()}`,
+    `Zone Sense storage test, ${new Date().toLocaleString()}`,
     `Device: ${navigator.userAgent}`,
     `Standalone app: ${matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'yes' : 'no'}`,
     `Protected from cleanup: ${$('#persisted').textContent}`,

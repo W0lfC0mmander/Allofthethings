@@ -60,11 +60,11 @@ const extOf = (blob) => (blob.type === 'image/png' ? 'png' : blob.type === 'appl
 const typeOf = (path) => (/\.png$/i.test(path) ? 'image/png' : /\.pdf$/i.test(path) ? 'application/pdf' : 'image/jpeg');
 const csvCell = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
 
-const ROOT = 'Wet Check/';
+const ROOT = 'Zone Sense/';
 const DATA_FILE = 'App data/wetcheck-data.json';
 
 /**
- * Makes a backup: a zip that opens as a "Wet Check" folder with Settings, a folder per
+ * Makes a backup: a zip that opens as a "Zone Sense" folder with Settings, a folder per
  * property (and its folders and subdivisions), each report's PDF and photos, and an
  * "App data" file that Restore reads.
  * folderId: back up one property (folder and everything in it); omit for everything.
@@ -196,10 +196,10 @@ export async function createBackup(appVersion, folderId = null, { makePdf, progr
     ...(await ref(data)),
   };
   add(DATA_FILE, JSON.stringify(file));
-  add('App data/Read me.txt', 'This folder lets the Wet Check app restore everything in this backup.\nTo restore, choose the backup .zip file in Settings > Backup and restore.\nDon\'t change or move the files in this backup if you want to restore from it.\n');
+  add('App data/Read me.txt', 'This folder lets the Zone Sense app restore everything in this backup.\nTo restore, choose the backup .zip file in Settings > Backup and restore.\nDon\'t change or move the files in this backup if you want to restore from it.\n');
 
   const blob = await makeZip(entries);
-  const name = safe(`${folder ? folder.name : 'Wet Check'} backup ${stamp()}.zip`);
+  const name = safe(`${folder ? folder.name : 'Zone Sense'} backup ${stamp()}.zip`);
   if (!folderId) await db.setSetting('lastBackupAt', file.exportedAt);
   return { blob, name, counts: countsOf(data), pdfsFailed };
 }
@@ -212,7 +212,7 @@ function countsOf(d) {
   };
 }
 
-const NOT_BACKUP = 'That file isn’t a Wet Check backup.';
+const NOT_BACKUP = 'That file isn’t a Zone Sense backup.';
 
 // Reads a backup: a .zip from this version, or a .json from earlier versions.
 // Resolves with { kind, name, exportedAt, counts, data } or throws a readable error.
@@ -235,10 +235,12 @@ export async function readBackup(file) {
   if (parsed.format > FORMAT) throw new Error('This backup was made by a newer version of the app. Update the app, then try again.');
 
   // Zip backups point at photo files; a missing one comes back empty rather than failing.
-  const prefix = files ? [...files.keys()].find((k) => k.endsWith(DATA_FILE)).slice(0, -(ROOT + DATA_FILE).length) : '';
+  // Paths start with the backup's top folder, which was "Wet Check/" before the rename, so
+  // look them up under whatever folder actually holds the data file.
+  const dataRoot = files ? [...files.keys()].find((k) => k.endsWith(DATA_FILE)).slice(0, -DATA_FILE.length) : '';
   const resolve = async (value) => {
     if (value && typeof value === 'object' && typeof value.$file === 'string') {
-      const get = files && files.get(prefix + value.$file);
+      const get = files && files.get(dataRoot + value.$file.slice(value.$file.indexOf('/') + 1));
       if (!get) return null;
       return ownBlob(await get(), typeOf(value.$file));
     }
