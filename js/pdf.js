@@ -47,9 +47,11 @@ function blobToDataUrl(blob) {
 // (jsPDF's getImageProperties), not createImageBitmap, which Safari sometimes refuses for photos
 // stored in IndexedDB. Returns null if the photo can't be read, so one bad photo
 // doesn't stop the whole export.
-async function loadImage(doc, blob) {
+// With maxSide, a JPEG larger than that many pixels is scaled down and recompressed, to keep
+// the file small enough to email (Send for approval).
+async function loadImage(doc, blob, maxSide = 0) {
   try {
-    const data = await blobToDataUrl(blob);
+    let data = await blobToDataUrl(blob);
     let w;
     let h;
     let format;
@@ -66,6 +68,19 @@ async function loadImage(doc, blob) {
       format = data.startsWith('data:image/png') ? 'PNG' : 'JPEG';
     }
     if (!w || !h) return null;
+    if (maxSide && format === 'JPEG' && Math.max(w, h) > maxSide) {
+      const img = new Image();
+      img.src = data;
+      await img.decode();
+      const k = maxSide / Math.max(w, h);
+      const c = document.createElement('canvas');
+      c.width = Math.round(w * k);
+      c.height = Math.round(h * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      data = c.toDataURL('image/jpeg', 0.6);
+      w = c.width;
+      h = c.height;
+    }
     return { data, w, h, format };
   } catch (err) {
     console.warn('Skipped a photo in the PDF', err);
@@ -130,6 +145,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
   const itemized = show.itemized !== false;
   const JsPDF = await loadJsPdf();
   const doc = new JsPDF({ unit: 'pt', format: 'letter' });
+  const loadPhoto = (blob) => loadImage(doc, blob, show.photoMax || 0); // finding, controller and property photos
   const propertyName = property.join(' / ') || 'Wet check';
   const ACCENT = hexToRgb(accent);
   const ACCENT_SOFT = tint(ACCENT, 0.9);
@@ -179,7 +195,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
   // One controller: photo on the left, its details in a grid, then the two GPS spots and notes.
   async function controllerCard(c) {
     const PAD = 12;
-    const img = c.photo && showPhotos ? await loadImage(doc, c.photo) : null;
+    const img = c.photo && showPhotos ? await loadPhoto(c.photo) : null;
     const PH = 84;
     const photo = img ? (() => {
       const sc = Math.min(PH / img.w, PH / img.h);
@@ -343,7 +359,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
   // The compact report has no cover photo: the stats sit under the details and findings follow.
   const bottomTop = compact ? y + 4 : PAGE_H - MARGIN - bottomH;
 
-  const coverImg = propertyPhoto && !compact ? await loadImage(doc, propertyPhoto) : null;
+  const coverImg = propertyPhoto && !compact ? await loadPhoto(propertyPhoto) : null;
   if (coverImg) {
     const { w, h } = coverImg;
     const maxH = bottomTop - y - 22;
@@ -491,7 +507,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       const number = i + 1;
 
       let photo = null;
-      const img = f.photo && (showPhotos || f.mark) ? await loadImage(doc, f.photo) : null;
+      const img = f.photo && (showPhotos || f.mark) ? await loadPhoto(f.photo) : null;
       if (img) {
         const max = f.mark ? MARK_W : PHOTO_W; // a zone status mark prints smaller than a photo
         const s = Math.min(max / img.w, (f.mark ? MARK_W : PHOTO_MAX_H) / img.h);
@@ -589,7 +605,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       // More photos: a row of three under the finding.
       const more = [];
       for (const blob of showPhotos ? f.morePhotos || [] : []) {
-        const m = await loadImage(doc, blob);
+        const m = await loadPhoto(blob);
         if (m) more.push(m);
       }
       const cellW = (CONTENT_W - 2 * 10) / 3;
@@ -925,7 +941,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       heading(zone, items.length);
       for (let i = 0; i < items.length; i++) {
         const f = items[i];
-        const img = f.photo && (showPhotos || f.mark) ? await loadImage(doc, f.photo) : null;
+        const img = f.photo && (showPhotos || f.mark) ? await loadPhoto(f.photo) : null;
         const box = f.mark ? 40 : TH;
         const thumb = img ? (() => {
           const sc = Math.min(box / img.w, box / img.h);
