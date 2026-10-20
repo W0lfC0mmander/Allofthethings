@@ -54,12 +54,34 @@ export async function saveIssueList(list) {
 // that doesn't exist yet is created.
 const NEW_DEFAULTS = [
   { name: 'Broken nozzle', group: 'Head and nozzle adjustments', before: 'Clogged nozzle' },
-  { name: 'Short circuit alert', group: 'Controller and sensors', before: 'Rain or weather sensor issue' },
-  { name: 'Master valve or pump start alert', group: 'Controller and sensors', before: 'Rain or weather sensor issue' },
+  { name: 'Short circuit alert', group: 'Controller and sensors', before: 'Rain sensor Issue' },
+  { name: 'Master valve or pump start alert', group: 'Controller and sensors', before: 'Rain sensor Issue' },
   ...['Pump not starting', 'Pump low pressure', 'Pump losing prime', 'Pump leaking', 'Pump issue'].map((name) => ({ name, group: 'Pump', afterGroup: 'Controller and sensors' })),
 ];
 
+// Default issues renamed later. Each is renamed once on this phone, in an edited list and on
+// saved findings, report prices and property profiles; 'issuesRenamed' remembers which.
+const RENAMED_DEFAULTS = [{ from: 'Rain or weather sensor issue', to: 'Rain sensor Issue' }];
+
+async function renameOldDefaults() {
+  const done = (await db.getSetting('issuesRenamed')) || [];
+  const todo = RENAMED_DEFAULTS.filter((r) => !done.includes(r.from));
+  if (!todo.length) return;
+  const saved = await db.getSetting('issueList');
+  const list = saved && saved.groups ? clone(saved) : null;
+  for (const r of todo) {
+    if (list && !findIssue(list, r.to)) {
+      const issue = findIssue(list, r.from);
+      if (issue) issue.name = r.to;
+    }
+    await db.renameIssue(r.from, r.to);
+  }
+  if (list) await saveIssueList(list);
+  await db.setSetting('issuesRenamed', [...done, ...todo.map((r) => r.from)]);
+}
+
 export async function addNewDefaults() {
+  await renameOldDefaults();
   const saved = await db.getSetting('issueList');
   const done = (await db.getSetting('issuesAdded')) || [];
   const todo = NEW_DEFAULTS.filter((d) => !done.includes(d.name));
