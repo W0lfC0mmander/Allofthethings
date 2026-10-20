@@ -118,7 +118,8 @@ const tint = (c, amount) => c.map((v) => Math.round(v + (255 - v) * amount));
  * template: 'full' (cover, a page per zone with large photos), 'compact' (findings as short
  *           rows right after a short cover) or 'proposal' (estimate and customer approval
  *           first, findings as rows after)
- * show:     { photos, coords } — false leaves finding photos or locations out
+ * show:     { photos, coords, itemized } — false leaves finding photos, locations or the
+ *           per-repair prices out (itemized off keeps only the estimate total)
  * Returns a Blob.
  */
 export async function buildReportPdf({ report, property, propertyPhoto, logo, companyName, accent, groups, zoneName, estimate = null, contact = null, signature = null, controllers = [], template = 'full', show = {} }) {
@@ -126,6 +127,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
   const proposal = template === 'proposal';
   const showPhotos = show.photos !== false;
   const showCoords = show.coords !== false;
+  const itemized = show.itemized !== false;
   const JsPDF = await loadJsPdf();
   const doc = new JsPDF({ unit: 'pt', format: 'letter' });
   const propertyName = property.join(' / ') || 'Wet check';
@@ -510,7 +512,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       };
       add('bold', 13, INK, f.issue, { x: titleX });
       let sub = zoneName(f.zone || '');
-      if (estimate && f.mark !== 'ok') {
+      if (estimate && itemized && f.mark !== 'ok') {
         const price = findingPrices.get(f.id);
         sub += `  ·  ${price == null ? 'No price' : formatMoney(price)}`;
       }
@@ -700,12 +702,18 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     y += 22;
 
     const right = PAGE_W - MARGIN - 10;
-    const cols = [
-      { title: 'Repair', x: MARGIN + 10, w: 250 },
-      { title: 'Qty', x: right - 170, align: 'right' },
-      { title: 'Unit price', x: right - 80, align: 'right' },
-      { title: 'Amount', x: right, align: 'right' },
-    ];
+    // Without itemized prices the table lists the repairs and quantities, and only the total is priced.
+    const cols = itemized
+      ? [
+          { title: 'Repair', x: MARGIN + 10, w: 250 },
+          { title: 'Qty', x: right - 170, align: 'right' },
+          { title: 'Unit price', x: right - 80, align: 'right' },
+          { title: 'Amount', x: right, align: 'right' },
+        ]
+      : [
+          { title: 'Repair', x: MARGIN + 10, w: 380 },
+          { title: 'Qty', x: right, align: 'right' },
+        ];
     const head = () => {
       fill(ACCENT);
       doc.rect(MARGIN, y, CONTENT_W, 22, 'F');
@@ -738,7 +746,9 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       font('normal', 10);
       color(INK);
       doc.text(String(l.qty), cols[1].x, base, { align: 'right' });
-      if (l.unit == null) {
+      if (!itemized) {
+        // Only the total is priced.
+      } else if (l.unit == null) {
         color(MUTED);
         doc.text('Not priced', cols[2].x, base, { align: 'right' });
         doc.text('—', cols[3].x, base, { align: 'right' });
@@ -905,7 +915,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
         };
         add('bold', 10.5, INK, f.issue);
         const price = estimate && f.mark !== 'ok' ? new Map(estimate.prices).get(f.id) : undefined;
-        if (estimate && f.mark !== 'ok') add('normal', 8.5, MUTED, price == null ? 'No price' : formatMoney(price));
+        if (estimate && itemized && f.mark !== 'ok') add('normal', 8.5, MUTED, price == null ? 'No price' : formatMoney(price));
         if (f.note) add('normal', 9.5, INK, f.note);
         if (f.disclaimer) add('italic', 8.5, MUTED, f.disclaimer);
         if (showCoords && f.stamp && f.stamp.lat != null) {

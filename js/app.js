@@ -11,7 +11,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 47;
+const APP_VERSION = 48;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -1041,7 +1041,7 @@ async function reportPdf(report) {
   const profile = path.length ? path[0].profile : null;
   const blob = await buildReportPdf({
     template: ex.template,
-    show: { photos: ex.photos, coords: ex.coords },
+    show: { photos: ex.photos, coords: ex.coords, itemized: ex.itemized },
     estimate,
     report,
     property,
@@ -1759,7 +1759,7 @@ async function renderProfile(id) {
   renderControllers(folder.controllers || []);
   const ex = exportSettingsOf(folder);
   $('#profile-export-name').textContent = TEMPLATE_NAMES[ex.template];
-  const left = [!ex.photos && 'photos', !ex.prices && 'prices', !ex.coords && 'locations'].filter(Boolean);
+  const left = [!ex.photos && 'photos', !ex.prices ? 'prices' : !ex.itemized && 'individual prices', !ex.coords && 'locations'].filter(Boolean);
   $('#profile-export-detail').textContent = left.length ? `Leaves out ${left.join(' and ').replace(' and ', left.length > 2 ? ', ' : ' and ')}.` : 'Photos, prices and locations included.';
 
   const [mainText, mainOn] = await Promise.all([mainDisclaimer(), mainDisclaimerOn()]);
@@ -2119,19 +2119,25 @@ $('#add-controller').addEventListener('click', () => editController(null));
 const TEMPLATE_NAMES = { full: 'Full report', compact: 'Compact', proposal: 'Estimate / proposal' };
 
 function exportSettingsOf(property) {
-  return { template: 'full', photos: true, prices: true, coords: true, ...((property && property.exportSettings) || {}) };
+  return { template: 'full', photos: true, prices: true, itemized: true, coords: true, ...((property && property.exportSettings) || {}) };
 }
+
+$('#export-prices').addEventListener('change', () => {
+  $('#export-itemized').disabled = !$('#export-prices').checked;
+});
 
 $('#profile-export').addEventListener('click', async () => {
   const ex = exportSettingsOf(current.record);
   for (const r of document.querySelectorAll('input[name="export-template"]')) r.checked = r.value === ex.template;
   $('#export-photos').checked = ex.photos;
   $('#export-prices').checked = ex.prices;
+  $('#export-itemized').checked = ex.itemized;
+  $('#export-itemized').disabled = !ex.prices;
   $('#export-coords').checked = ex.coords;
   if ((await showDialog($('#export-dialog'))) !== 'ok') return;
   const template = (document.querySelector('input[name="export-template"]:checked') || {}).value || 'full';
   await db.updateFolder(current.id, {
-    exportSettings: { template, photos: $('#export-photos').checked, prices: $('#export-prices').checked, coords: $('#export-coords').checked },
+    exportSettings: { template, photos: $('#export-photos').checked, prices: $('#export-prices').checked, itemized: $('#export-itemized').checked, coords: $('#export-coords').checked },
   });
   render();
 });

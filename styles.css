@@ -771,3 +771,5 @@ details.zone-group:not([open]) > .section-title { margin-top: 0; }
 .template-option:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 #export-dialog .check { margin: 10px 0; align-items: flex-start; }
 #export-dialog .check .hint { font-weight: 400; margin: 0; }
+#export-dialog .check.sub { margin-left: 32px; }
+#export-dialog .check input:disabled + span { opacity: .5; }
