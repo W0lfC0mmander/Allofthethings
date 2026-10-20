@@ -1,7 +1,7 @@
 // Builds the wet check report PDF on the device (no upload), using jsPDF.
 
 import { coordsText, stampDetails } from './location.js';
-import { formatDate, WATER_SOURCES, isSection } from './ui.js';
+import { formatDate, WATER_SOURCES, isSection, zonesLabel } from './ui.js';
 import { formatMoney } from './issues.js';
 
 let libPromise = null;
@@ -115,9 +115,17 @@ const tint = (c, amount) => c.map((v) => Math.round(v + (255 - v) * amount));
  * zoneName: zone -> "Zone 4" / "No zone"
  * estimate: null, or buildEstimate() from issues.js for a repair estimate page
  * contact:  null, or the property's contact { name, phone, email, address } for the cover
+ * template: 'full' (cover, a page per zone with large photos), 'compact' (findings as short
+ *           rows right after a short cover) or 'proposal' (estimate and customer approval
+ *           first, findings as rows after)
+ * show:     { photos, coords } — false leaves finding photos or locations out
  * Returns a Blob.
  */
-export async function buildReportPdf({ report, property, propertyPhoto, logo, companyName, accent, groups, zoneName, estimate = null, contact = null, signature = null, controllers = [] }) {
+export async function buildReportPdf({ report, property, propertyPhoto, logo, companyName, accent, groups, zoneName, estimate = null, contact = null, signature = null, controllers = [], template = 'full', show = {} }) {
+  const compact = template === 'compact';
+  const proposal = template === 'proposal';
+  const showPhotos = show.photos !== false;
+  const showCoords = show.coords !== false;
   const JsPDF = await loadJsPdf();
   const doc = new JsPDF({ unit: 'pt', format: 'letter' });
   const propertyName = property.join(' / ') || 'Wet check';
@@ -169,7 +177,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
   // One controller: photo on the left, its details in a grid, then the two GPS spots and notes.
   async function controllerCard(c) {
     const PAD = 12;
-    const img = c.photo ? await loadImage(doc, c.photo) : null;
+    const img = c.photo && showPhotos ? await loadImage(doc, c.photo) : null;
     const PH = 84;
     const photo = img ? (() => {
       const sc = Math.min(PH / img.w, PH / img.h);
@@ -190,7 +198,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     const info = c.poc ? doc.splitTextToSize(c.poc, w) : [];
     font('bold', 12.5);
     const nameLines = doc.splitTextToSize(c.name || 'Controller', w);
-    const textH = nameLines.length * lineHeight(12.5) + 6 + 30 + 30 + (info.length ? 14 + info.length * lineHeight(9.5) : 0);
+    const textH = nameLines.length * lineHeight(12.5) + 6 + 30 + (showCoords ? 30 : 0) + (info.length ? 14 + info.length * lineHeight(9.5) : 0);
     const h = Math.max(photo ? PH : 0, textH) + PAD * 2;
     ensure(h + 10);
     const top = y;
@@ -220,7 +228,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       fx += widths[i];
     });
     ty += 30;
-    spots.forEach(([k, loc], i) => {
+    if (showCoords) spots.forEach(([k, loc], i) => {
       const sx = x + i * (w / 2);
       label(k, sx, ty + 7, MUTED, 6.5);
       font(loc ? 'bold' : 'normal', 9.5);
@@ -228,7 +236,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       if (loc) linkText(coordsText(loc), sx, ty + 20, pdfMapUrl(loc));
       else doc.text('Not recorded', sx, ty + 20);
     });
-    ty += 30;
+    if (showCoords) ty += 30;
     if (info.length) {
       label('Pump / backflow', x, ty + 7, MUTED, 6.5);
       ty += 14;
@@ -330,9 +338,10 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
   // Space for the bottom block (stats + logo), so the photo can fill what's left.
   const statsH = 64;
   const bottomH = statsH + 26 + (companyName ? 40 : 0);
-  const bottomTop = PAGE_H - MARGIN - bottomH;
+  // The compact report has no cover photo: the stats sit under the details and findings follow.
+  const bottomTop = compact ? y + 4 : PAGE_H - MARGIN - bottomH;
 
-  const coverImg = propertyPhoto ? await loadImage(doc, propertyPhoto) : null;
+  const coverImg = propertyPhoto && !compact ? await loadImage(doc, propertyPhoto) : null;
   if (coverImg) {
     const { w, h } = coverImg;
     const maxH = bottomTop - y - 22;
@@ -345,7 +354,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     fill(ACCENT);
     doc.rect(px, y + ph, pw, 4, 'F');
     y += ph + 4;
-  } else {
+  } else if (!compact) {
     stroke(LINE);
     doc.line(MARGIN, y, PAGE_W - MARGIN, y);
   }
@@ -355,7 +364,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
   const stats = [
     [String(total), total === 1 ? 'Finding' : 'Findings'],
     [String(zones), zones === 1 ? 'Zone' : 'Zones'],
-    [String(located), located === 1 ? 'Location mapped' : 'Locations mapped'],
+    ...(showCoords ? [[String(located), located === 1 ? 'Location mapped' : 'Locations mapped']] : []),
   ];
   if (estimate) stats.push([formatMoney(estimate.total), 'Repair estimate']);
   const tileW = (CONTENT_W - 8 * (stats.length - 1)) / stats.length;
@@ -384,8 +393,44 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
   }
   fill(ACCENT);
   doc.rect(0, PAGE_H - 6, PAGE_W, 6, 'F');
+  y = sy + (companyName ? 44 : 0); // where the compact report carries on
 
-  // ================= Findings =================
+  const tableRows = [];
+
+  // A section title with a short accent rule under it.
+  // room: space needed under the title, so it doesn't sit alone at the bottom of a page.
+  function sectionTitle(text, room = 66) {
+    ensure(44 + room);
+    font('bold', 18);
+    color(INK);
+    doc.text(text, MARGIN, y + 18);
+    fill(ACCENT);
+    doc.rect(MARGIN, y + 26, 40, 3, 'F');
+    y += 44;
+  }
+
+  // Small centered marker after a zone's last finding: a short rule each side of "End of Zone N".
+  function endOfZone(zone) {
+    ensure(20);
+    const endText = `End of ${zoneName(zone)}`.toUpperCase();
+    font('bold', 7.5);
+    const ew = doc.getTextWidth(endText) + endText.length * 1.2;
+    const cx = PAGE_W / 2;
+    label(endText, cx - ew / 2, y + 6, MUTED, 7.5);
+    stroke(ACCENT_MID, 0.6);
+    doc.line(cx - ew / 2 - 46, y + 3.5, cx - ew / 2 - 10, y + 3.5);
+    doc.line(cx + ew / 2 + 10, y + 3.5, cx + ew / 2 + 46, y + 3.5);
+    y += 20;
+  }
+
+  async function controllerSection() {
+    if (!controllers.length) return;
+    sectionTitle(controllers.length === 1 ? 'Controller' : 'Controllers', 130);
+    for (const c of controllers) await controllerCard(c);
+  }
+
+  // ================= Findings: full layout =================
+  async function fullFindings() {
   newPage();
 
   // Quick summary of the property's controllers, ahead of the findings.
@@ -433,8 +478,6 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     y += 20 + 14;
   };
 
-  const tableRows = [];
-
   for (const [zone, items] of groups) {
     // Every zone after the first starts on a fresh page, so each zone reads on its own.
     if (zone !== groups[0][0]) newPage();
@@ -446,7 +489,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       const number = i + 1;
 
       let photo = null;
-      const img = f.photo ? await loadImage(doc, f.photo) : null;
+      const img = f.photo && (showPhotos || f.mark) ? await loadImage(doc, f.photo) : null;
       if (img) {
         const max = f.mark ? MARK_W : PHOTO_W; // a zone status mark prints smaller than a photo
         const s = Math.min(max / img.w, (f.mark ? MARK_W : PHOTO_MAX_H) / img.h);
@@ -480,6 +523,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
         lines.push({ gap: 5 });
         add('italic', 9.5, MUTED, f.disclaimer);
       }
+      if (showCoords) {
       lines.push({ gap: 10, rule: true });
       lines.push({ label: 'Location', size: 7.5 });
       if (f.stamp && f.stamp.lat != null) {
@@ -491,6 +535,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       }
       const extra = stampDetails(f.stamp);
       if (extra) add('normal', 8.5, MUTED, extra);
+      }
 
       const textH = lines.reduce((h, l) => h + (l.gap || lineHeight(l.size)), 0);
       const rowH = Math.max(photo ? photo.h : 0, textH);
@@ -541,7 +586,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
 
       // More photos: a row of three under the finding.
       const more = [];
-      for (const blob of f.morePhotos || []) {
+      for (const blob of showPhotos ? f.morePhotos || [] : []) {
         const m = await loadImage(doc, blob);
         if (m) more.push(m);
       }
@@ -572,20 +617,12 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
         doc.line(MARGIN, y - GAP / 2, PAGE_W - MARGIN, y - GAP / 2);
       }
     }
-    // Small centered marker after the zone's last finding: a short rule each side of "End of Zone N".
-    ensure(20);
-    const endText = `End of ${zoneName(zone)}`.toUpperCase();
-    font('bold', 7.5);
-    const ew = doc.getTextWidth(endText) + endText.length * 1.2;
-    const cx = PAGE_W / 2;
-    label(endText, cx - ew / 2, y + 6, MUTED, 7.5);
-    stroke(ACCENT_MID, 0.6);
-    doc.line(cx - ew / 2 - 46, y + 3.5, cx - ew / 2 - 10, y + 3.5);
-    doc.line(cx + ew / 2 + 10, y + 3.5, cx + ew / 2 + 46, y + 3.5);
-    y += 20;
+    endOfZone(zone);
+  }
   }
 
   // ================= Summary table =================
+  function summaryTable() {
   if (tableRows.length) {
     newPage(); // after the last zone, on its own page like each zone
     font('bold', 18);
@@ -643,12 +680,17 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     doc.line(MARGIN, y, PAGE_W - MARGIN, y);
   }
 
+  }
+
   // ================= Repair estimate =================
+  // fresh: start on a new page (otherwise it follows on, as in the compact report).
+  function estimateSection({ fresh = true, title = 'Repair estimate' } = {}) {
   if (estimate && estimate.lines.length) {
-    newPage();
+    if (fresh) newPage();
+    else ensure(160);
     font('bold', 18);
     color(INK);
-    doc.text('Repair estimate', MARGIN, y + 18);
+    doc.text(title, MARGIN, y + 18);
     fill(ACCENT);
     doc.rect(MARGIN, y + 26, 40, 3, 'F');
     y += 38;
@@ -674,7 +716,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     estimate.lines.forEach((l, k) => {
       font('normal', 10);
       const nameLines = doc.splitTextToSize(l.issue, cols[0].w);
-      const zonesText = l.zones.length ? `${l.zones.length === 1 ? 'Zone' : 'Zones'} ${l.zones.join(', ')}` : '';
+      const zonesText = l.zones.length ? zonesLabel(l.zones) : '';
       const h = nameLines.length * lineHeight(10) + (zonesText ? lineHeight(8.5) : 0) + 12;
       if (y + h > bodyBottom) {
         newPage();
@@ -742,8 +784,11 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     }
   }
 
+  }
+
   // ================= Signature =================
   // signature: { image (PNG Blob) | null, name, role, date }
+  async function signatureSection() {
   if (signature) {
     const sigImg = signature.image ? await loadImage(doc, signature.image) : null;
     const blockH = 132;
@@ -782,6 +827,147 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       ny += 14;
     }
     y = ny;
+  }
+
+  }
+
+  // ================= Customer approval (proposal) =================
+  function approvalSection() {
+    ensure(150);
+    y += 18;
+    label('Customer approval', MARGIN, y + 8);
+    y += 20;
+    font('normal', 10);
+    color(INK);
+    const text = estimate && estimate.lines.length
+      ? `I approve the repairs listed above for ${formatMoney(estimate.total)}${estimate.unpriced ? ', plus any items not yet priced' : ''}.`
+      : 'I approve the repairs for the findings in this report.';
+    for (const l of doc.splitTextToSize(text, CONTENT_W)) {
+      doc.text(l, MARGIN, y + 10);
+      y += lineHeight(10);
+    }
+    const lineY = y + 52;
+    const sigW = 270;
+    const dateX = MARGIN + sigW + 50;
+    stroke(INK, 0.8);
+    doc.line(MARGIN, lineY, MARGIN + sigW, lineY);
+    doc.line(dateX, lineY, PAGE_W - MARGIN, lineY);
+    label('Customer signature', MARGIN, lineY + 13, MUTED, 7);
+    label('Date', dateX, lineY + 13, MUTED, 7);
+    const nameY = lineY + 46;
+    doc.line(MARGIN, nameY, MARGIN + sigW, nameY);
+    label('Printed name', MARGIN, nameY + 13, MUTED, 7);
+    y = nameY + 24;
+  }
+
+  // ================= Findings: rows (compact and proposal) =================
+  // One row per finding: number, a small photo, the issue and its details.
+  async function rowFindings() {
+    sectionTitle('Findings', 24 + 64 + 12); // a zone heading and the first row
+    if (!total && !groups.length) {
+      font('normal', 12);
+      color(MUTED);
+      doc.text('No findings were recorded.', MARGIN, y + 12);
+      y += 30;
+      return;
+    }
+    const TH = 64; // thumbnail size
+    const heading = (zone, count, continued = false) => {
+      fill(ACCENT);
+      doc.rect(MARGIN, y, 3, 16, 'F');
+      font('bold', 11);
+      color(INK);
+      doc.text(zoneName(zone) + (continued ? ' (continued)' : ''), MARGIN + 10, y + 12);
+      font('normal', 8.5);
+      color(MUTED);
+      doc.text(`${count} finding${count === 1 ? '' : 's'}`, PAGE_W - MARGIN, y + 12, { align: 'right' });
+      y += 24;
+    };
+    for (const [zone, items] of groups) {
+      ensure(24 + TH + 12);
+      heading(zone, items.length);
+      for (let i = 0; i < items.length; i++) {
+        const f = items[i];
+        const img = f.photo && (showPhotos || f.mark) ? await loadImage(doc, f.photo) : null;
+        const box = f.mark ? 40 : TH;
+        const thumb = img ? (() => {
+          const sc = Math.min(box / img.w, box / img.h);
+          return { ...img, dw: img.w * sc, dh: img.h * sc };
+        })() : null;
+        const badgeX = MARGIN + 9;
+        const thumbX = MARGIN + 24;
+        const textX = thumbX + (thumb ? TH + 12 : 0);
+        const w = PAGE_W - MARGIN - textX;
+        const lines = [];
+        const add = (style, size, c, text, extra = {}) => {
+          font(style, size);
+          for (const l of doc.splitTextToSize(text, w)) lines.push({ style, size, c, text: l, ...extra });
+        };
+        add('bold', 10.5, INK, f.issue);
+        const price = estimate && f.mark !== 'ok' ? new Map(estimate.prices).get(f.id) : undefined;
+        if (estimate && f.mark !== 'ok') add('normal', 8.5, MUTED, price == null ? 'No price' : formatMoney(price));
+        if (f.note) add('normal', 9.5, INK, f.note);
+        if (f.disclaimer) add('italic', 8.5, MUTED, f.disclaimer);
+        if (showCoords && f.stamp && f.stamp.lat != null) {
+          add('bold', 9, ACCENT, coordsText(f.stamp), { link: pdfMapUrl(f.stamp) });
+        }
+        const textH = lines.reduce((h, l) => h + lineHeight(l.size), 0);
+        const rowH = Math.max(thumb ? TH : 0, textH, 18) + 12;
+        if (y + rowH > bodyBottom) {
+          newPage();
+          heading(zone, items.length, true);
+        }
+        fill(ACCENT);
+        doc.circle(badgeX, y + 7, 7, 'F');
+        font('bold', 8);
+        color(WHITE);
+        doc.text(String(i + 1), badgeX, y + 9.8, { align: 'center' });
+        if (thumb) {
+          doc.addImage(thumb.data, thumb.format, thumbX + (TH - thumb.dw) / 2, y + (f.mark ? (TH - thumb.dh) / 2 : 0), thumb.dw, thumb.dh);
+          if (!f.mark) {
+            stroke(LINE, 0.5);
+            doc.rect(thumbX + (TH - thumb.dw) / 2, y, thumb.dw, thumb.dh, 'S');
+          }
+        }
+        let ty = y;
+        for (const l of lines) {
+          font(l.style, l.size);
+          color(l.c);
+          if (l.link) linkText(l.text, textX, ty + l.size, l.link);
+          else doc.text(l.text, textX, ty + l.size);
+          ty += lineHeight(l.size);
+        }
+        y += rowH;
+        if (i < items.length - 1) {
+          stroke(LINE, 0.6);
+          doc.line(textX, y - 6, PAGE_W - MARGIN, y - 6);
+        }
+      }
+      endOfZone(zone);
+      y += 6;
+    }
+  }
+
+  // ================= Put the chosen template together =================
+  if (compact) {
+    await controllerSection();
+    await rowFindings();
+    estimateSection({ fresh: false });
+    await signatureSection();
+  } else if (proposal) {
+    const priced = estimate && estimate.lines.length;
+    if (priced) estimateSection({ title: 'Proposed repairs' });
+    else newPage();
+    approvalSection();
+    await signatureSection();
+    newPage();
+    await controllerSection();
+    await rowFindings();
+  } else {
+    await fullFindings();
+    if (showCoords) summaryTable();
+    estimateSection();
+    await signatureSection();
   }
 
   // ================= Header and footer on inside pages =================

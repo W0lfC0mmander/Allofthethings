@@ -66,6 +66,13 @@ export const WATER_SOURCES = {
 export const SECTIONS = ['Controller', 'Pump'];
 export const isSection = (z) => SECTIONS.includes(z);
 export const zoneName = (z) => (isSection(z) ? z : z ? `Zone ${z}` : 'No zone');
+// ["Controller", "1", "3"] -> "Controller, Zones 1, 3".
+export function zonesLabel(zones) {
+  const parts = zones.filter(isSection);
+  const nums = zones.filter((z) => !isSection(z));
+  if (nums.length) parts.push(`${nums.length === 1 ? 'Zone' : 'Zones'} ${nums.join(', ')}`);
+  return parts.join(', ');
+}
 
 export function plural(n, word) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;

@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { showDialog, askName, askAction, askConfirm, plural, formatDate, today, WATER_SOURCES, SECTIONS, isSection, zoneName } from './ui.js';
+import { showDialog, askName, askAction, askConfirm, plural, formatDate, today, WATER_SOURCES, SECTIONS, isSection, zoneName, zonesLabel } from './ui.js';
 import { compressPhoto, compressLogo } from './photo.js';
 import { loadIssueList, saveIssueList, addNewDefaults, resetIssueList, findIssue, toPrice, formatMoney, findingPrice, buildEstimate, effectiveList, priceSnapshot, discountAmount, discountLabel } from './issues.js';
 import { buildReportPdf, pdfFileName, DEFAULT_ACCENT } from './pdf.js';
@@ -11,7 +11,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 46;
+const APP_VERSION = 47;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -1033,9 +1033,15 @@ async function reportPdf(report) {
     issueListFor(report.folderId),
   ]);
   const property = path.map((f) => f.name);
-  const estimate = report.estimate ? buildEstimate(findings, list, report.prices, report.discount) : null;
+  const ex = exportSettingsOf(path.length ? path[0] : null);
+  // A proposal is about the repair prices, so it prices the findings even on a report without
+  // an estimate; prices turned off in the property's export settings leave all of that out.
+  const priced = ex.prices && (report.estimate || ex.template === 'proposal');
+  const estimate = priced ? buildEstimate(findings, list, report.prices, report.discount) : null;
   const profile = path.length ? path[0].profile : null;
   const blob = await buildReportPdf({
+    template: ex.template,
+    show: { photos: ex.photos, coords: ex.coords },
     estimate,
     report,
     property,
@@ -1370,7 +1376,7 @@ async function showEstimate(report) {
     text.textContent = l.issue;
     const detail = document.createElement('span');
     detail.className = 'line-detail';
-    const zones = l.zones.length ? ` · ${l.zones.length === 1 ? 'Zone' : 'Zones'} ${l.zones.join(', ')}` : '';
+    const zones = l.zones.length ? ` · ${zonesLabel(l.zones)}` : '';
     detail.textContent = `${l.qty} × ${l.unit == null ? 'no price' : formatMoney(l.unit)}${zones}`;
     text.append(detail);
     const amount = document.createElement('span');
@@ -1725,6 +1731,7 @@ function renderProfileCard(property) {
   const parts = [];
   if (p.contact && p.contact.name) parts.push(`Contact: ${p.contact.name}`);
   if (property.controllers && property.controllers.length) parts.push(plural(property.controllers.length, 'controller'));
+  if (property.exportSettings && property.exportSettings.template !== 'full') parts.push(`${TEMPLATE_NAMES[property.exportSettings.template]} PDF`);
   const custom = Object.keys(p.issues || {}).length + (p.added || []).length;
   if (custom) parts.push(`${plural(custom, 'custom issue')}`);
   if (p.disclaimerOn === false) parts.push('disclaimer off');
@@ -1750,6 +1757,10 @@ async function renderProfile(id) {
     : 'Shown on the cover of this property’s reports.';
 
   renderControllers(folder.controllers || []);
+  const ex = exportSettingsOf(folder);
+  $('#profile-export-name').textContent = TEMPLATE_NAMES[ex.template];
+  const left = [!ex.photos && 'photos', !ex.prices && 'prices', !ex.coords && 'locations'].filter(Boolean);
+  $('#profile-export-detail').textContent = left.length ? `Leaves out ${left.join(' and ').replace(' and ', left.length > 2 ? ', ' : ' and ')}.` : 'Photos, prices and locations included.';
 
   const [mainText, mainOn] = await Promise.all([mainDisclaimer(), mainDisclaimerOn()]);
   const on = p.disclaimerOn != null ? p.disclaimerOn : mainOn;
@@ -2101,10 +2112,34 @@ async function editController(existing) {
 
 $('#add-controller').addEventListener('click', () => editController(null));
 
+// ---------- Export settings (per property) ----------
+// folder.exportSettings on the top-level property: { template: 'full'|'compact'|'proposal',
+// photos, prices, coords }. Kept out of the profile, so resetting the profile leaves it.
+
+const TEMPLATE_NAMES = { full: 'Full report', compact: 'Compact', proposal: 'Estimate / proposal' };
+
+function exportSettingsOf(property) {
+  return { template: 'full', photos: true, prices: true, coords: true, ...((property && property.exportSettings) || {}) };
+}
+
+$('#profile-export').addEventListener('click', async () => {
+  const ex = exportSettingsOf(current.record);
+  for (const r of document.querySelectorAll('input[name="export-template"]')) r.checked = r.value === ex.template;
+  $('#export-photos').checked = ex.photos;
+  $('#export-prices').checked = ex.prices;
+  $('#export-coords').checked = ex.coords;
+  if ((await showDialog($('#export-dialog'))) !== 'ok') return;
+  const template = (document.querySelector('input[name="export-template"]:checked') || {}).value || 'full';
+  await db.updateFolder(current.id, {
+    exportSettings: { template, photos: $('#export-photos').checked, prices: $('#export-prices').checked, coords: $('#export-coords').checked },
+  });
+  render();
+});
+
 $('#reset-profile').addEventListener('click', async () => {
   const ok = await askConfirm(
     'Reset property',
-    `Remove the contact, disclaimer and all custom issues and prices for “${current.record.name}”? It will use the main settings again. Controllers and existing reports’ prices stay.`,
+    `Remove the contact, disclaimer and all custom issues and prices for “${current.record.name}”? It will use the main settings again. Controllers, export settings and existing reports’ prices stay.`,
     'Reset'
   );
   if (!ok) return;

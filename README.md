@@ -41,6 +41,10 @@ Folders and subdivisions inside a property use its profile. **Reset this propert
 
 Each report has an optional **Include a repair estimate** checkbox (also in the report's ⋮ menu). With it on, each finding is priced from the prices in effect when the report was created (main list plus the property's profile), or a price typed on that finding. Later price changes don't change existing reports; use **Use current prices** in the report's ⋮ menu or the estimate to update one, the report shows a running total, and the PDF adds the total to the cover and a Repair estimate page with quantity, unit price and amount per repair. Findings whose issue has no price are listed but left out of the total. Tap **+ Add a discount** in the estimate to take a dollar amount or a percentage off the total, with an optional label; the PDF shows the subtotal, the discount and the total after it.
 
+
+## PDF templates
+
+Each property profile has an **Export settings** section that picks how that property's reports export: **Full report** (cover page, each zone on its own page with large photos, summary table, estimate), **Compact** (short cover, one row per finding with a small photo) or **Estimate / proposal** (opens with the proposed repairs and a customer approval signature block, findings after). Checkboxes turn finding photos, prices and estimate, and GPS locations on or off. The proposal prices every finding even when the report's estimate is off, unless prices are turned off. Resetting a profile keeps its export settings.
 ## Troubleshooting disclaimer
 
 Each finding has an optional checkbox that adds a troubleshooting disclaimer, shown on the finding and in the PDF. The wording defaults to "*Troubleshooting required. Additional proposals may be required to complete this repair." and can be edited and saved from the finding form.

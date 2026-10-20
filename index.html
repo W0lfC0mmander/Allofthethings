@@ -144,6 +144,14 @@
       <ul id="controller-list" class="list"></ul>
       <p id="controller-empty" class="hint">No controllers yet. Add each controller on this property.</p>
       <button id="add-controller" type="button" class="btn small outline add-issue">+ Add controller</button>
+      <h2 class="section-title">Export settings</h2>
+      <button id="profile-export" class="company-card">
+        <span class="company-logo-box backup-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="row-text">
+          <span id="profile-export-name" class="row-name">Full report</span>
+          <span id="profile-export-detail" class="row-detail">Photos, prices and locations included.</span>
+        </span>
+      </button>
       <h2 class="section-title">Troubleshooting disclaimer</h2>
       <button id="profile-disclaimer" class="company-card">
         <span class="company-logo-box backup-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
@@ -539,6 +547,35 @@
       <textarea id="controller-poc" class="field" rows="3" maxlength="500" placeholder="e.g. 2in Febco 825Y backflow, pump model, settings, enclosure"></textarea>
       <div class="actions">
         <button id="controller-delete" type="button" class="btn danger-text start" hidden>Delete</button>
+        <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="export-dialog" class="full">
+    <form data-ok>
+      <h2>Export settings</h2>
+      <p class="hint">How this property's reports look when exported as a PDF.</p>
+      <div class="template-options">
+        <label class="template-option">
+          <input type="radio" name="export-template" value="full">
+          <span><strong>Full report</strong><span class="hint">Cover page with the property photo, each zone on its own page with large photos, a summary table, then the estimate.</span></span>
+        </label>
+        <label class="template-option">
+          <input type="radio" name="export-template" value="compact">
+          <span><strong>Compact</strong><span class="hint">Short cover, then one row per finding with a small photo. Fewer pages, easy to print or email.</span></span>
+        </label>
+        <label class="template-option">
+          <input type="radio" name="export-template" value="proposal">
+          <span><strong>Estimate / proposal</strong><span class="hint">Opens with the repair estimate and a customer approval signature, with the findings as rows after.</span></span>
+        </label>
+      </div>
+      <h3 class="label">Include</h3>
+      <label class="check"><input id="export-photos" type="checkbox"><span>Finding photos</span></label>
+      <label class="check"><input id="export-prices" type="checkbox"><span>Prices and estimate<br><span class="hint">Off leaves out every price, even on reports with an estimate.</span></span></label>
+      <label class="check"><input id="export-coords" type="checkbox"><span>GPS locations<br><span class="hint">Coordinates, map links and the summary table.</span></span></label>
+      <div class="actions">
         <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Cancel</button>
         <button type="submit" class="btn primary">Save</button>
       </div>

@@ -762,3 +762,12 @@ details.zone-group:not([open]) > .section-title { margin-top: 0; }
 .segmented span { display: block; padding: 10px 8px; text-align: center; font-weight: 600; cursor: pointer; }
 .segmented input:checked + span { background: var(--accent); color: #fff; }
 .segmented input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -4px; }
+
+/* Export settings */
+.template-options { display: grid; gap: 8px; margin: 12px 0 16px; }
+.template-option { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.template-option input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex: none; }
+.template-option .hint { display: block; margin: 2px 0 0; font-weight: 400; }
+.template-option:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+#export-dialog .check { margin: 10px 0; align-items: flex-start; }
+#export-dialog .check .hint { font-weight: 400; margin: 0; }
