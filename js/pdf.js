@@ -841,9 +841,30 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
 
   }
 
-  // ================= Customer approval (proposal) =================
+  // ================= Customer approval =================
+  // The signature, date and printed name lines are fillable form fields, so the customer can
+  // sign electronically by typing in any PDF app (or print the page and sign by hand).
+  let fields = 0;
+  function formField(name, x, lineY, w, size) {
+    const h = size + 10;
+    const f = new doc.AcroFormTextField();
+    f.fieldName = name;
+    f.Rect = [x, lineY - h - 1, w, h]; // from the top of the page, sitting on the line
+    f.fontSize = size;
+    doc.addField(f);
+    // jsPDF leaves out the default appearance and font text fields need; add them to the form.
+    if (!fields++) {
+      const form = doc.internal.acroformPlugin.acroFormDictionaryRoot;
+      form.DA = '/Helv 0 Tf 0 g';
+      Object.defineProperty(form, 'DR', {
+        enumerable: true,
+        value: '<< /Font << /Helv << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >> >> >>',
+      });
+    }
+  }
+
   function approvalSection() {
-    ensure(150);
+    ensure(170);
     y += 18;
     label('Customer approval', MARGIN, y + 8);
     y += 20;
@@ -862,12 +883,18 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     stroke(INK, 0.8);
     doc.line(MARGIN, lineY, MARGIN + sigW, lineY);
     doc.line(dateX, lineY, PAGE_W - MARGIN, lineY);
+    formField('Customer signature', MARGIN, lineY, sigW, 16);
+    formField('Date', dateX, lineY, PAGE_W - MARGIN - dateX, 11);
     label('Customer signature', MARGIN, lineY + 13, MUTED, 7);
     label('Date', dateX, lineY + 13, MUTED, 7);
     const nameY = lineY + 46;
     doc.line(MARGIN, nameY, MARGIN + sigW, nameY);
+    formField('Printed name', MARGIN, nameY, sigW, 11);
     label('Printed name', MARGIN, nameY + 13, MUTED, 7);
-    y = nameY + 24;
+    font('italic', 8);
+    color(MUTED);
+    doc.text('Tap a line to fill it in and sign electronically, or print and sign.', MARGIN, nameY + 32);
+    y = nameY + 40;
   }
 
   // ================= Findings: rows (compact and proposal) =================
@@ -963,6 +990,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     await controllerSection();
     await rowFindings();
     estimateSection({ fresh: false });
+    approvalSection();
     await signatureSection();
   } else if (proposal) {
     const priced = estimate && estimate.lines.length;
@@ -977,6 +1005,7 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
     await fullFindings();
     if (showCoords) summaryTable();
     estimateSection();
+    approvalSection();
     await signatureSection();
   }
 
