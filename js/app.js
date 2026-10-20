@@ -12,7 +12,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 53;
+const APP_VERSION = 54;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -94,7 +94,7 @@ function setHeader({ title, subtitle = '', crumbs = [], back = false, more = fal
   $('#subtitle').hidden = !subtitle;
   $('#back').hidden = !back;
   $('#header-more').hidden = !more;
-  document.title = title === 'Properties' ? 'Wet Check' : `${title} · Wet Check`;
+  document.title = title === 'Properties' ? 'Zone Sense' : `${title} · Zone Sense`;
   const nav = $('#crumbs');
   nav.replaceChildren();
   nav.hidden = crumbs.length === 0;

@@ -1,6 +1,6 @@
 {
-  "name": "Wet Check",
-  "short_name": "Wet Check",
+  "name": "Zone Sense",
+  "short_name": "Zone Sense",
   "description": "Irrigation wet check reports that work offline.",
   "start_url": "./",
   "scope": "./",
