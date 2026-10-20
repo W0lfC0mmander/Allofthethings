@@ -106,8 +106,26 @@ async function put(store, record) {
   const db = await openDb();
   const tx = db.transaction(store, 'readwrite');
   tx.objectStore(store).put(packed);
-  await txDone(tx);
+  try {
+    await txDone(tx);
+  } catch (e) {
+    if (isStorageFull(e)) throw new Error('The phone is out of room for the app, so this wasn’t saved. Make a backup, then delete old reports to free up space.');
+    throw e;
+  }
   return record;
+}
+
+const isStorageFull = (e) => e && (e.name === 'QuotaExceededError' || e.code === 22);
+
+// How much room the app is using of what the browser allows, or null if it won't say.
+export async function storageStatus() {
+  if (!navigator.storage || !navigator.storage.estimate) return null;
+  try {
+    const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+    return quota ? { usage, quota, free: Math.max(0, quota - usage) } : null;
+  } catch {
+    return null;
+  }
 }
 
 // Rewrites records saved before photos were stored as bytes, one at a time so a large

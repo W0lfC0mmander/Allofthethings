@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e7490">
+  <title>Storage test</title>
+  <link rel="icon" href="icons/icon-192.png">
+  <style>
+    :root {
+      --accent: #0e7490; --bg: #f4f6f8; --surface: #fff; --text: #15202b;
+      --muted: #5b6875; --line: #e1e6eb; --danger: #c62828; --ok: #2e7d32;
+      color-scheme: light dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --accent: #22a3c4; --bg: #0f1418; --surface: #182027; --text: #e8edf1; --muted: #93a1ad; --line: #26313a; --danger: #ef6b6b; --ok: #5fbf68; }
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0; padding: calc(env(safe-area-inset-top) + 12px) 16px 40px;
+      background: var(--bg); color: var(--text);
+      font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    h1 { font-size: 1.3rem; margin: 4px 0 12px; }
+    h2 { font-size: 1rem; margin: 0 0 8px; }
+    a { color: var(--accent); }
+    .card { background: var(--surface); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .warn { color: var(--danger); }
+    .good { color: var(--ok); }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 0.95rem; }
+    dt { color: var(--muted); }
+    dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+    label { display: block; margin: 10px 0 4px; font-size: 0.9rem; color: var(--muted); }
+    select, input { width: 100%; padding: 10px; font-size: 1rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+    .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    button { flex: 1 1 auto; padding: 12px 16px; font-size: 1rem; font-weight: 600; border: 0; border-radius: 10px; background: var(--accent); color: #fff; }
+    button.plain { background: var(--line); color: var(--text); }
+    button.danger { background: var(--danger); }
+    button:disabled { opacity: 0.45; }
+    .bar { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; margin: 10px 0 4px; }
+    .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+    #log { white-space: pre-wrap; font: 0.8rem/1.4 ui-monospace, Menlo, monospace; margin: 0; max-height: 220px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <a href="./#/settings">‹ Back to Wet Check</a>
+  <h1>Storage test</h1>
+
+  <div class="card">
+    <p class="muted" style="margin-top:0">This fills the phone with pretend wet check reports and photos, the same size the app saves, until it reaches the amount you pick or the phone says it's full. Then it deletes all of it. Your real reports are never touched, but make a backup first in case the phone gets low on space.</p>
+    <p class="muted" style="margin-bottom:0">On an iPhone or iPad, open this from inside the installed app (Settings › Storage), because the app has its own storage, separate from Safari.</p>
+  </div>
+
+  <div class="card">
+    <h2>This phone now</h2>
+    <dl>
+      <dt>Used by the app</dt><dd id="used">…</dd>
+      <dt>Browser's limit</dt><dd id="quota">…</dd>
+      <dt>Protected from cleanup</dt><dd id="persisted">…</dd>
+      <dt>Your real data</dt><dd id="real">…</dd>
+      <dt>Average photo</dt><dd id="avg-photo">…</dd>
+      <dt>Estimated room for</dt><dd id="room">…</dd>
+    </dl>
+    <div class="bar"><span id="bar"></span></div>
+    <div id="pct" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <h2>Run the test</h2>
+    <label for="target">Fill up to</label>
+    <select id="target">
+      <option value="250">250 MB more</option>
+      <option value="1000" selected>1 GB more</option>
+      <option value="3000">3 GB more</option>
+      <option value="0">Until the phone says full</option>
+    </select>
+    <label for="per-report">Photos per pretend report</label>
+    <input id="per-report" type="number" inputmode="numeric" min="1" max="200" value="20">
+    <div class="btns">
+      <button id="start">Start test</button>
+      <button id="stop" class="plain" disabled>Stop</button>
+    </div>
+    <div class="btns">
+      <button id="cleanup" class="danger" disabled>Delete test data</button>
+      <button id="copy" class="plain" disabled>Copy results</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Results</h2>
+    <dl>
+      <dt>Pretend reports saved</dt><dd id="r-reports">0</dd>
+      <dt>Pretend photos saved</dt><dd id="r-photos">0</dd>
+      <dt>Data written</dt><dd id="r-bytes">0 MB</dd>
+      <dt>Speed</dt><dd id="r-speed">–</dd>
+    </dl>
+    <p id="verdict" style="margin-bottom:0"></p>
+  </div>
+
+  <div class="card">
+    <h2>Log</h2>
+    <pre id="log"></pre>
+  </div>
+
+  <script type="module" src="js/storage-test.js"></script>
+</body>
+</html>

@@ -11,7 +11,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -409,7 +409,7 @@ let companyLogoUrl = null;
 async function renderSettings() {
   current = { kind: 'settings', id: '', record: null };
   setHeader({ title: 'Settings', back: true });
-  await Promise.all([renderCompanyCard(), renderIssuesCard(), renderDisclaimerCard(), renderSignatureCard(), renderBackupCard(false)]);
+  await Promise.all([renderCompanyCard(), renderIssuesCard(), renderDisclaimerCard(), renderSignatureCard(), renderBackupCard(false), renderStorageCard()]);
   $('#settings-version').textContent = `App version ${APP_VERSION}`;
   showView('settings');
 }
@@ -1241,6 +1241,42 @@ function backUp(folder = null) {
       return { blob, name, detail: `Includes ${countsText(counts)}.${missing} Save it somewhere safe, like Files, iCloud Drive or Google Drive. Open it there to see it as a folder.` };
     },
   }).then(() => render());
+}
+
+// ---------- Storage ----------
+// Warns before the phone runs out of room for photos: at 80% of what the browser allows,
+// or when less than about 300 MB (some 850 photos) is left.
+
+const AVG_PHOTO = 350 * 1024; // a typical compressed finding photo
+const LOW_FREE = 300 * 1024 * 1024;
+const storageLow = (s) => s && (s.usage / s.quota >= 0.8 || s.free < LOW_FREE);
+
+function sizeText(bytes) {
+  return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
+function storageText(s) {
+  const photos = Math.floor(s.free / AVG_PHOTO);
+  return `Using ${sizeText(s.usage)} of ${sizeText(s.quota)}. Room for about ${photos.toLocaleString()} more photos.`;
+}
+
+async function renderStorageCard() {
+  const s = await db.storageStatus();
+  const detail = $('#settings-storage-detail');
+  detail.textContent = s ? storageText(s) : 'This phone doesn’t say how much room is left. Tap to test it.';
+  detail.classList.toggle('warn', storageLow(s));
+}
+
+$('#settings-storage').addEventListener('click', () => (location.href = './storage-test.html'));
+
+// Checked when the app opens and after photos are saved; shown at most every 10 minutes.
+let storageWarnedAt = 0;
+async function checkStorage() {
+  if (Date.now() - storageWarnedAt < 10 * 60 * 1000) return;
+  const s = await db.storageStatus();
+  if (!storageLow(s)) return;
+  storageWarnedAt = Date.now();
+  showToast(`Phone storage is getting full. ${storageText(s)} Make a backup and delete old reports to free up space.`);
 }
 
 async function openBackupDialog() {
@@ -2446,6 +2482,7 @@ async function addFinding() {
   const { result, fields } = await openFindingForm(null);
   if (result !== 'ok') return;
   const saved = await db.saveFinding(current.id, fields);
+  checkStorage();
   // Keep the new finding's zone open even if it isn't the zone being worked in.
   if (saved.zone !== zoneOf(current.record)) zoneFolds(current.id, zoneOf(current.record)).set(saved.zone || '', true);
   await render();
@@ -2668,4 +2705,5 @@ addNewDefaults()
   .finally(() => {
     render();
     db.storePhotosAsBytes().catch(() => {});
+    checkStorage();
   });
