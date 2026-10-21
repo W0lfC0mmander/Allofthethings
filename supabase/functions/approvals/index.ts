@@ -12,7 +12,8 @@
 //     decline { token, name, reason }
 //   From anyone using the app (no sign-in):
 //     bug     multipart form: action=bug, meta (JSON: description, email, info), screenshot
-//             (optional image). Emails the report to BUG_REPORT_EMAIL and nobody else.
+//             (optional image). Emails the report to BUG_REPORT_EMAIL and nobody else, at
+//             most 5 an hour from one internet address and 50 a day in all.
 //     reset   { email } -> emails a "choose a new password" link if that person is on a team.
 //
 //   Accounts (signed in). Zone Sense is invitation only: nobody can sign up, so every
@@ -47,7 +48,10 @@ const FROM = () => env('RESEND_FROM', 'Zone Sense <onboarding@resend.dev>');
 const MAX_PDF = 25 * 1024 * 1024;
 const MAX_ATTACHMENT = 20 * 1024 * 1024;
 const BUG_REPORT_EMAIL = () => env('BUG_REPORT_EMAIL', 'djimenez@zonesenseirrigation.com');
-const MAX_SCREENSHOT = 8 * 1024 * 1024;
+const MAX_SCREENSHOT = 3 * 1024 * 1024; // the app shrinks screenshots well under this
+// Bug reports need no sign-in, so they're capped to keep anyone from using up the email quota.
+const BUG_PER_HOUR = 5; // from one internet address
+const BUG_PER_DAY = 50; // from everyone together
 // An unanswered approval link stops working this long after it was sent; the app can send a new one.
 const LINK_DAYS = 30;
 const expired = (row: Record<string, any>) => row.status === 'sent' && Date.now() - Date.parse(row.sent_at) > LINK_DAYS * 24 * 3600 * 1000;
@@ -565,13 +569,34 @@ async function decline(req: Request, body: any) {
 
 // A bug report from the app's Settings. It needs no sign-in, so anyone using the app can
 // send one, but it only ever goes to BUG_REPORT_EMAIL.
-async function bug(form: FormData) {
+// Throws if too many bug reports came lately, and logs this one. If the log table isn't set up
+// yet (schema.sql not run), reports still go through rather than break.
+async function bugLimit(req: Request) {
+  const { ip } = requester(req);
+  const hour = new Date(Date.now() - 3600 * 1000).toISOString();
+  const day = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const [mine, all] = await Promise.all([
+    sb().from('bug_reports').select('id', { count: 'exact', head: true }).eq('ip', ip).gte('sent_at', hour),
+    sb().from('bug_reports').select('id', { count: 'exact', head: true }).gte('sent_at', day),
+  ]);
+  if (mine.error || all.error) {
+    console.error('bug_reports:', (mine.error || all.error).message);
+    return;
+  }
+  if ((mine.count || 0) >= BUG_PER_HOUR) throw new Fail(429, 'You’ve sent several bug reports in the last hour. Try again later.');
+  if ((all.count || 0) >= BUG_PER_DAY) throw new Fail(429, 'Bug reports are paused for today. Try again tomorrow.');
+  await sb().from('bug_reports').insert({ ip });
+  await sb().from('bug_reports').delete().lt('sent_at', new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString());
+}
+
+async function bug(req: Request, form: FormData) {
   let meta: any = {};
   try {
     meta = JSON.parse(String(form.get('meta') || '{}'));
   } catch { /* empty report */ }
   const text = clip(meta.description, 5000);
   if (!text) throw new Fail(400, 'Say what happened first.');
+  await bugLimit(req);
   const from = clip(meta.email, 200).toLowerCase();
   const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from) ? from : undefined;
   const info = meta.info && typeof meta.info === 'object' ? Object.entries(meta.info).slice(0, 20) : [];
@@ -795,7 +820,7 @@ export async function handle(req: Request) {
     const isForm = (req.headers.get('content-type') || '').startsWith('multipart/form-data');
     if (isForm) {
       const form = await req.formData();
-      return form.get('action') === 'bug' ? await bug(form) : await send(req, form);
+      return form.get('action') === 'bug' ? await bug(req, form) : await send(req, form);
     }
     const body = await req.json().catch(() => ({}));
     switch (body.action) {

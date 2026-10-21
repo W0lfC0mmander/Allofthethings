@@ -91,3 +91,14 @@ language sql stable security definer set search_path = ''
 as $$ select id from auth.users where lower(email) = lower(e) limit 1 $$;
 revoke all on function public.user_id_for_email(text) from public, anon, authenticated;
 grant execute on function public.user_id_for_email(text) to service_role;
+
+-- Bug reports need no sign-in, so the function keeps a short log of when and from where each
+-- one came, to cap how many can be sent (a few an hour from one address, and a daily total).
+-- Rows older than two days are cleared as new reports arrive.
+create table if not exists public.bug_reports (
+  id bigint generated always as identity primary key,
+  ip text not null default '',
+  sent_at timestamptz not null default now()
+);
+create index if not exists bug_reports_sent_at on public.bug_reports (sent_at);
+alter table public.bug_reports enable row level security;
