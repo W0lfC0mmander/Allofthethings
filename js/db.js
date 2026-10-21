@@ -326,8 +326,6 @@ export async function renameIssue(from, to) {
   return n;
 }
 
-export const getAllReports = () => getAll('reports');
-
 export async function deleteFinding(id) {
   const db = await openDb();
   const tx = db.transaction('findings', 'readwrite');

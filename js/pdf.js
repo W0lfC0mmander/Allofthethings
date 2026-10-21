@@ -515,7 +515,6 @@ export async function buildReportPdf({ report, property, propertyPhoto, logo, co
       }
 
       const textX = MARGIN + (photo ? PHOTO_W + GAP + 4 : 0);
-      const textW = PAGE_W - MARGIN - textX;
       const badge = 20; // numbered circle beside the issue
       const titleX = textX + badge + 8;
 

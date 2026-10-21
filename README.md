@@ -71,6 +71,31 @@ python3 -m http.server 8000
 
 then open http://localhost:8000.
 
-When you change any app file, bump `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js` (shown on the home screen) so installed copies update.
+When you change any app file, bump `VERSION` in `sw.js` and `APP_VERSION` in `js/core.js` (shown on the home screen) so installed copies update. A new file also goes in the `FILES` list in `sw.js`, so it's there offline.
+
+## Code layout
+
+`index.html` loads `js/app.js`, which starts the app. The screens are split by area:
+
+- `js/core.js`: routing, the header, list rows, the error banner and the "file ready" dialog, shared by every screen.
+- `js/folders.js`: the home screen, folders, the property photo and search.
+- `js/reports.js`: a report, its zones and findings, the finding form, zone marks, the estimate and PDF export.
+- `js/approvals.js`: Send for approval and the Approvals and work dashboard.
+- `js/settings.js`: Settings, company, signature, backup and restore, storage, issues and prices, Report a bug.
+- `js/profiles.js`: property profiles, controllers, the disclaimer and export settings.
+- `js/accounts.js`: sign-in, Face ID / fingerprint unlock, and Account and team.
+
+The rest of `js/` holds helpers those use (database, PDF, backup, photos, sign-in calls and so on).
+
+## Automatic check
+
+Every pull request runs `tests/screens.spec.mjs` (GitHub Actions, `.github/workflows/check.yml`): it opens each screen in a phone-sized test browser, signed in and offline, adds a folder, steps through zones, opens the finding form and exports a PDF, and fails on any error. It also checks that every file the app loads is in `sw.js`, so it still opens offline. To run it yourself:
+
+```
+cd tests
+npm install
+npx playwright install chromium
+npx playwright test
+```
 
 The handwriting fonts for typed signatures (Great Vibes, Dancing Script, Homemade Apple) are in `fonts/` under the SIL Open Font License; each has its license file beside it.
