@@ -12,15 +12,20 @@
       ]
     },
     {
-      "name": "Head and nozzle adjustments",
+      "name": "Broken Risers & Nozzles",
       "issues": [
         "Broken nozzle",
+        "Broken riser"
+      ]
+    },
+    {
+      "name": "Head and nozzle adjustments",
+      "issues": [
         "Clogged nozzle",
         "Misaligned head",
         "Head sunken or low",
         "Head tilted",
-        "Wrong or mismatched nozzle",
-        "Broken riser"
+        "Wrong or mismatched nozzle"
       ]
     },
     {
@@ -34,11 +39,11 @@
       ]
     },
     {
-      "name": "Pipe issues",
+      "name": "Leaks & Breaks",
       "issues": [
         "Lateral line leak",
-        "Mainline leak",
-        "Backflow issue"
+        "Funny pipe leak",
+        "Mainline leak"
       ]
     },
     {
@@ -73,6 +78,12 @@
         "Pump losing prime",
         "Pump leaking",
         "Pump issue"
+      ]
+    },
+    {
+      "name": "Backflow",
+      "issues": [
+        "Backflow issue"
       ]
     },
     {

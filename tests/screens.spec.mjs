@@ -131,6 +131,80 @@ test('new finding: photo first, then group and issue, then save', async ({ page 
   await expect(page.locator('#finding-groups .card')).toHaveCount(before + 1);
 });
 
+// Opens the issue picker on a seeded report whose controller has the given water source.
+async function openPicker(page, water, zone = '1') {
+  const { reportId, propertyId } = await seed(page);
+  await page.evaluate(async ({ propertyId, reportId, water, zone }) => {
+    const db = await import('./js/db.js');
+    await db.updateFolder(propertyId, { controllers: [{ id: 'ctl1', name: 'Front entrance', zones: 12, water }] });
+    await db.updateReport(reportId, { currentZone: zone });
+  }, { propertyId, reportId, water, zone });
+  await open(page, `#/r/${reportId}`, 'report-view', 'Wet check');
+  return reportId;
+}
+const sheetButtons = (page, cls) => page.locator(`#issue-sheet .sheet-btn.${cls}`).allTextContents();
+
+test('group picker: even grid, common groups at the bottom, Other goes straight to the form', async ({ page }) => {
+  await openPicker(page, 'municipal');
+  await page.click('#pick-issue');
+  if (process.env.SHOTS) await page.locator('#issue-sheet').screenshot({ path: `${process.env.SHOTS}/sheet2.png` });
+  expect(await sheetButtons(page, 'rare')).toEqual(['Coverage and pressure', 'Valve issues', 'Drip issues', 'Other']);
+  expect(await sheetButtons(page, 'common')).toEqual(['Broken heads', 'Broken Risers & Nozzles', 'Leaks & Breaks', 'Head & nozzle adjustments']);
+  await page.locator('#issue-sheet .sheet-btn', { hasText: 'Other' }).click();
+  await expect(page.locator('#finding-dialog')).toBeVisible();
+  await expect(page.locator('#finding-issue')).toHaveValue('Other');
+});
+
+test('sections: Pump or Backflow follows the controller water source', async ({ page }) => {
+  await openPicker(page, 'municipal', 'Controller');
+  await page.click('#zone-next');
+  await expect(page.locator('#zone-value')).toHaveText('Backflow');
+  await page.click('#pick-issue');
+  expect(await sheetButtons(page, 'common')).toEqual(['Backflow', 'Other']);
+  await page.locator('#issue-sheet .sheet-btn', { hasText: 'Backflow' }).click();
+  await expect(page.locator('#finding-issue')).toHaveValue('Backflow issue');
+  await page.keyboard.press('Escape');
+  await page.click('#zone-next');
+  await expect(page.locator('#zone-value')).toHaveText('Zone 1');
+});
+
+test('sections: a pump controller steps through Pump, not Backflow', async ({ page }) => {
+  await openPicker(page, 'pump-well', 'Controller');
+  await page.click('#zone-next');
+  await expect(page.locator('#zone-value')).toHaveText('Pump');
+  await page.click('#zone-next');
+  await expect(page.locator('#zone-value')).toHaveText('Zone 1');
+  await page.click('#zone-prev');
+  await expect(page.locator('#zone-value')).toHaveText('Pump');
+});
+
+test('an edited issue list gets the new groups once, keeping prices', async ({ page }) => {
+  await page.goto('./');
+  await expect(page.locator('#folder-view')).toBeVisible();
+  const groups = await page.evaluate(async () => {
+    const db = await import('./js/db.js');
+    const { addNewDefaults } = await import('./js/issues.js');
+    const issue = (name, price = null) => ({ name, price, off: false });
+    await db.setSetting('issueList', { groups: [
+      { name: 'Broken heads', issues: [issue('Broken mini rotor')] },
+      { name: 'Head and nozzle adjustments', issues: [issue('Broken nozzle', 5), issue('Clogged nozzle'), issue('Broken riser', 7)] },
+      { name: 'Pipe issues', issues: [issue('Lateral line leak'), issue('Mainline leak'), issue('Backflow issue', 9)] },
+      { name: 'Pump', issues: [issue('Pump issue')] },
+    ] });
+    for (const k of ['issuesAdded', 'issuesMoved']) await db.setSetting(k, []);
+    await addNewDefaults();
+    await addNewDefaults(); // a second run changes nothing
+    return (await db.getSetting('issueList')).groups.map((g) => [g.name, g.issues.map((i) => (i.price != null ? `${i.name} $${i.price}` : i.name))]);
+  });
+  const byName = Object.fromEntries(groups);
+  expect(groups.map(([n]) => n).slice(0, 3)).toEqual(['Broken heads', 'Broken Risers & Nozzles', 'Head and nozzle adjustments']);
+  expect(byName['Broken Risers & Nozzles']).toEqual(['Broken nozzle $5', 'Broken riser $7']);
+  expect(byName['Head and nozzle adjustments']).toEqual(['Clogged nozzle']);
+  expect(byName['Leaks & Breaks']).toEqual(['Lateral line leak', 'Funny pipe leak', 'Mainline leak']);
+  expect(byName['Backflow']).toEqual(['Backflow issue $9']);
+  expect(byName['Pipe issues']).toBeUndefined();
+});
+
 test('the customer approval page and storage test page open', async ({ page }) => {
   await page.goto('./approve.html');
   await expect(page.locator('#failed-text')).toContainText('missing part of its address');
