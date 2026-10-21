@@ -6,6 +6,7 @@ import { buildReportPdf, pdfFileName, DEFAULT_ACCENT } from './pdf.js';
 import { createBackup, readBackup, restoreBackup } from './backup.js';
 import { drawSignature } from './signature.js';
 import { cloudReady, signedIn, signedInEmail, account, checkAccount, signIn, signOut, useEmailLink, setPassword, callApprovals } from './cloud.js';
+import { lockSupported, lockOn, lockOff, turnLockOn, unlock } from './lock.js';
 import { getPosition, readExif, coordsText, mapUrl, stampDetails, copyText, formatTime } from './location.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -1163,6 +1164,7 @@ async function renderAccount() {
   current = { kind: 'account', id: '', record: null };
   setHeader({ title: 'Account and team', back: true });
   drawAccount();
+  drawLock();
   showView('account');
   if (!navigator.onLine) {
     $('#team-list').replaceChildren();
@@ -1312,7 +1314,7 @@ $('#account-signout').addEventListener('click', async () => {
     ? 'Your reports stay on this phone. You’ll need your password to sign back in.'
     : 'You’re offline, and signing back in needs a connection. Your reports stay on this phone.';
   if (!(await askConfirm('Sign out?', text, 'Sign out'))) return;
-  signOut();
+  signOutHere();
   gateSignIn();
 });
 
@@ -1360,7 +1362,7 @@ let appStarted = false;
 function gatePanel(name, error = '') {
   document.body.classList.add('gated');
   $('#gate').hidden = false;
-  for (const p of ['signin', 'password', 'company', 'working', 'message']) $(`#gate-${p}`).hidden = p !== name;
+  for (const p of ['signin', 'password', 'company', 'working', 'message', 'lock']) $(`#gate-${p}`).hidden = p !== name;
   $('#gate-error').textContent = error;
   $('#gate-error').hidden = !error;
   $('#gate-error').classList.add('warn');
@@ -1388,6 +1390,7 @@ $('#gate-signin').addEventListener('submit', async (e) => {
   button.textContent = 'Signing in…';
   try {
     await signIn($('#gate-email').value.trim(), $('#gate-pass').value);
+    await offerLock();
     gateWorking('Checking your account…');
     await checkAndEnter();
   } catch (x) {
@@ -1416,7 +1419,7 @@ async function gateLink(type, token, email) {
   gateWorking(type === 'invite' ? 'Opening your invite…' : 'Opening your link…');
   try {
     // Someone else signed in on this phone is signed out first.
-    if (signedIn() && signedInEmail().toLowerCase() !== email.toLowerCase()) signOut();
+    if (signedIn() && signedInEmail().toLowerCase() !== email.toLowerCase()) signOutHere();
     await useEmailLink(type, token);
   } catch (x) {
     return gateSignIn(x.message, email);
@@ -1439,6 +1442,7 @@ $('#gate-password').addEventListener('submit', async (e) => {
   button.textContent = 'Saving…';
   try {
     await setPassword($('#gate-newpass').value, $('#gate-name-box').hidden ? '' : $('#gate-name').value.trim());
+    await offerLock();
     gateWorking('Checking your account…');
     await checkAndEnter();
   } catch (x) {
@@ -1475,9 +1479,100 @@ $('#gate-retry').addEventListener('click', async () => {
   await checkAndEnter();
 });
 
-$('#gate-signout').addEventListener('click', () => {
+function signOutHere() {
+  lockOff();
   signOut();
+}
+
+$('#gate-signout').addEventListener('click', () => {
+  signOutHere();
   gateSignIn();
+});
+
+// ---------- Face ID / fingerprint ----------
+// When it's on, opening the app (or coming back to it after a while) asks for it first.
+
+const RELOCK_AFTER = 5 * 60000;
+
+let afterUnlock = null;
+function gateLock(next) {
+  afterUnlock = next;
+  gatePanel('lock');
+  tryUnlock();
+}
+
+async function tryUnlock() {
+  try {
+    await unlock();
+  } catch (x) {
+    // Some phones only show the prompt after a tap, so the button is there to try again.
+    if (!$('#gate-lock').hidden) {
+      $('#gate-error').textContent = x.message;
+      $('#gate-error').hidden = false;
+    }
+    return;
+  }
+  const next = afterUnlock;
+  afterUnlock = null;
+  if (next) next();
+}
+
+$('#gate-unlock').addEventListener('click', tryUnlock);
+$('#gate-lock-password').addEventListener('click', () => {
+  if (!navigator.onLine) {
+    $('#gate-error').textContent = 'Signing in with your password needs a connection. Unlock with Face ID or fingerprint, or try again once you’re online.';
+    $('#gate-error').hidden = false;
+    return;
+  }
+  const email = signedInEmail();
+  signOutHere();
+  gateSignIn('', email);
+});
+
+// Locks again when the app comes back after a while, unless something's half done in a
+// dialog (a finding being typed, say).
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    hiddenAt = Date.now();
+    return;
+  }
+  if (!appStarted || document.body.classList.contains('gated') || !lockOn(signedInEmail())) return;
+  if (!hiddenAt || Date.now() - hiddenAt < RELOCK_AFTER || document.querySelector('dialog[open]')) return;
+  gateLock(() => enter(account()));
+});
+
+// Offered once after signing in with a password, on phones that can do it.
+async function offerLock() {
+  const email = signedInEmail();
+  if (!email || lockOn(email) || !(await lockSupported())) return;
+  if (!(await askConfirm('Use Face ID or fingerprint?', 'Unlock Zone Sense with Face ID, your fingerprint or your phone’s screen lock instead of typing your password. You can change this in Settings → Account and team.', 'Turn on'))) return;
+  try {
+    await turnLockOn(email);
+  } catch (x) {
+    showToast(x.message);
+  }
+}
+
+async function drawLock() {
+  const supported = await lockSupported();
+  $('#lock-list').hidden = !supported;
+  if (!supported) return;
+  const on = lockOn(signedInEmail());
+  $('#lock-detail').textContent = on ? 'On: asked for when the app opens.' : 'Off. Turn on to unlock the app without your password.';
+  $('#lock-toggle').textContent = on ? 'Turn off' : 'Turn on';
+}
+
+$('#lock-toggle').addEventListener('click', async () => {
+  if (lockOn(signedInEmail())) lockOff();
+  else {
+    try {
+      await turnLockOn(signedInEmail());
+    } catch (x) {
+      showToast(x.message);
+    }
+  }
+  drawLock();
 });
 
 $('#gate-bug').addEventListener('click', reportBug);
@@ -1536,7 +1631,10 @@ async function recheckAccount(force = false) {
   }
 }
 
-window.addEventListener('signedout', () => gateSignIn('Your sign-in has ended. Sign in again.'));
+window.addEventListener('signedout', () => {
+  lockOff();
+  gateSignIn('Your sign-in has ended. Sign in again.');
+});
 window.addEventListener('online', () => recheckAccount());
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && recheckAccount());
 
@@ -3654,6 +3752,11 @@ function startApp() {
   }
   if (!cloudReady) return openApp(null);
   if (!signedIn()) return gateSignIn();
+  if (lockOn(signedInEmail())) return gateLock(afterSignedIn);
+  afterSignedIn();
+})();
+
+function afterSignedIn() {
   const a = account();
   if (a) {
     enter(a);
@@ -3666,4 +3769,4 @@ function startApp() {
     gateWorking('Checking your account…');
     checkAndEnter();
   }
-})();
+}

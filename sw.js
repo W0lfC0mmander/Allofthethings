@@ -18,6 +18,7 @@ const FILES = [
   './js/signature.js',
   './js/config.js',
   './js/cloud.js',
+  './js/lock.js',
   './js/vendor/jspdf.umd.min.js',
   './data/issues.json',
   './fonts/great-vibes.woff2',

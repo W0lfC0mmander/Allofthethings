@@ -50,6 +50,12 @@
         <button id="gate-company-btn" type="submit" class="btn primary wide">Set up company</button>
       </form>
 
+      <div id="gate-lock" hidden>
+        <p class="gate-text">Unlock to open Zone Sense.</p>
+        <button id="gate-unlock" type="button" class="btn primary wide">Unlock with Face ID or fingerprint</button>
+        <button id="gate-lock-password" type="button" class="btn wide">Use my password instead</button>
+      </div>
+
       <div id="gate-working" hidden>
         <p id="gate-working-text" class="gate-text">Checking your account…</p>
       </div>
@@ -144,6 +150,9 @@
       <h2 class="section-title">You</h2>
       <ul class="list">
         <li class="row"><div class="row-open"><span class="row-text"><span id="account-email" class="row-name"></span><span id="account-role" class="row-detail"></span></span></div><button id="account-signout" type="button" class="row-action">Sign out</button></li>
+      </ul>
+      <ul id="lock-list" class="list" hidden>
+        <li class="row"><div class="row-open"><span class="row-text"><span class="row-name">Face ID or fingerprint</span><span id="lock-detail" class="row-detail"></span></span></div><button id="lock-toggle" type="button" class="row-action"></button></li>
       </ul>
       <h2 class="section-title">Company</h2>
       <ul class="list">
