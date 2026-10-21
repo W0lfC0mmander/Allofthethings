@@ -48,6 +48,9 @@ const MAX_PDF = 25 * 1024 * 1024;
 const MAX_ATTACHMENT = 20 * 1024 * 1024;
 const BUG_REPORT_EMAIL = () => env('BUG_REPORT_EMAIL', 'djimenez@zonesenseirrigation.com');
 const MAX_SCREENSHOT = 8 * 1024 * 1024;
+// An unanswered approval link stops working this long after it was sent; the app can send a new one.
+const LINK_DAYS = 30;
+const expired = (row: Record<string, any>) => row.status === 'sent' && Date.now() - Date.parse(row.sent_at) > LINK_DAYS * 24 * 3600 * 1000;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -204,6 +207,10 @@ async function byToken(token: unknown) {
   const { data } = await sb().from('approvals').select('*').eq('token', token).maybeSingle();
   if (!data) throw new Fail(404, 'This approval link isn’t valid.');
   if (data.status === 'cancelled') throw new Fail(410, 'This proposal was withdrawn. Contact the sender for a new link.');
+  if (expired(data)) {
+    await sb().from('approvals').update({ status: 'cancelled' }).eq('id', data.id).eq('status', 'sent');
+    throw new Fail(410, `This link expired ${LINK_DAYS} days after it was sent. Contact ${data.reply_to || data.owner_email} for a new one.`);
+  }
   return data;
 }
 
@@ -377,8 +384,14 @@ async function send(req: Request, form: FormData) {
   let logoPath: string | null = null;
   const logo = form.get('logo');
   if (logo instanceof File && logo.size && logo.size < 2 * 1024 * 1024) {
-    logoPath = `${u.id}/${id}/logo.${logo.type === 'image/png' ? 'png' : 'jpg'}`;
-    await upload(logoPath, logo, logo.type || 'image/jpeg');
+    // Only PNG or JPEG, judged by the file's first bytes rather than what the phone calls it.
+    const b = new Uint8Array(await logo.slice(0, 8).arrayBuffer());
+    const kind = b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 ? 'png'
+      : b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff ? 'jpg' : null;
+    if (kind) {
+      logoPath = `${u.id}/${id}/logo.${kind}`;
+      await upload(logoPath, logo, kind === 'png' ? 'image/png' : 'image/jpeg');
+    }
   }
 
   const row = {
@@ -419,7 +432,7 @@ async function send(req: Request, form: FormData) {
         <p>${esc(company)} sent you a proposal${esc(total)} for <strong>${esc(row.property)}</strong> to review and approve.</p>
         ${row.message ? `<p style="white-space:pre-wrap;border-left:3px solid #e5e7eb;padding-left:12px;color:#4b5563">${esc(row.message)}</p>` : ''}
         ${button(row.accent, href, 'Review and sign')}
-        <p style="color:#6b7280;font-size:13px">You can read the full proposal before signing. Questions? Just reply to this email.</p>`),
+        <p style="color:#6b7280;font-size:13px">You can read the full proposal before signing. The link works for ${LINK_DAYS} days. Questions? Just reply to this email.</p>`),
     });
   } catch (err) {
     await sb().from('approvals').update({ status: 'cancelled' }).eq('id', id);
@@ -436,8 +449,10 @@ async function status(req: Request, body: any) {
     .select('id,status,customer_email,sent_at,viewed_at,decided_at,signer_name,decline_reason,signed_pdf_path,pdf_name')
     .eq('owner', u.id).in('id', ids);
   if (error) throw new Fail(500, error.message);
+  const old = data.filter(expired).map((r: any) => r.id);
+  if (old.length) await sb().from('approvals').update({ status: 'cancelled' }).in('id', old).eq('status', 'sent');
   const items = await Promise.all(data.map(async (r: any) => ({
-    id: r.id, status: r.status, sentTo: r.customer_email, sentAt: r.sent_at, viewedAt: r.viewed_at,
+    id: r.id, status: old.includes(r.id) ? 'cancelled' : r.status, expired: old.includes(r.id), sentTo: r.customer_email, sentAt: r.sent_at, viewedAt: r.viewed_at,
     decidedAt: r.decided_at, signerName: r.signer_name, declineReason: r.decline_reason,
     signedPdfUrl: r.status === 'approved' ? await link(r.signed_pdf_path, 600) : null,
     signedPdfName: signedName(r),

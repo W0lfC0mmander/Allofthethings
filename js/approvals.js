@@ -176,6 +176,7 @@ async function refreshApprovals(reports) {
     }
     if (a.status === 'sent' && it.status === 'approved') showToast(`${it.signerName || it.sentTo} approved ${updated.name}.`, 'ok');
     if (a.status === 'sent' && it.status === 'declined') showToast(`${it.signerName || it.sentTo} declined ${updated.name}.`);
+    if (a.status === 'sent' && it.expired) showToast(`The approval link for ${updated.name} expired after 30 days. Send it again if it’s still needed.`);
   }
   return changed;
 }
