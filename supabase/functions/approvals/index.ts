@@ -25,8 +25,8 @@ import { PDFDocument, StandardFonts, rgb, PDFName, PDFArray, PDFDict } from 'npm
 
 const env = (k: string, d = '') => Deno.env.get(k) || d;
 const BUCKET = 'approvals';
-const APPROVE_URL = () => env('APPROVE_URL', 'https://dnotsonice.github.io/Allofthethings/approve.html');
-const FROM = () => env('RESEND_FROM', 'Wet Check <onboarding@resend.dev>');
+const APPROVE_URL = () => env('APPROVE_URL', 'https://app.zonesenseirrigation.com/approve.html');
+const FROM = () => env('RESEND_FROM', 'Zone Sense <onboarding@resend.dev>');
 const MAX_PDF = 25 * 1024 * 1024;
 const MAX_ATTACHMENT = 20 * 1024 * 1024;
 
@@ -495,7 +495,7 @@ async function decline(req: Request, body: any) {
   await Promise.allSettled([email({
     to: [row.owner_email], replyTo: row.customer_email,
     subject: `Declined: ${row.property || row.report_name}`,
-    html: emailShell(row.accent, row.company_name || 'Wet Check', `<p>${esc(name || row.customer_email)} declined the proposal for <strong>${esc(row.property)}</strong>.</p>${reason ? `<p style="white-space:pre-wrap;border-left:3px solid #e5e7eb;padding-left:12px">${esc(reason)}</p>` : ''}<p>Reply to this email to reach them.</p>`),
+    html: emailShell(row.accent, row.company_name || 'Zone Sense', `<p>${esc(name || row.customer_email)} declined the proposal for <strong>${esc(row.property)}</strong>.</p>${reason ? `<p style="white-space:pre-wrap;border-left:3px solid #e5e7eb;padding-left:12px">${esc(reason)}</p>` : ''}<p>Reply to this email to reach them.</p>`),
   })]);
   return json(await publicView({ ...row, status: 'declined', decided_at: now }));
 }
