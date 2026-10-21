@@ -3,9 +3,8 @@
 // ink, transparent background), null if cleared, or undefined if cancelled.
 // The fonts ship with the app (fonts/), so typing works offline.
 
-import { showDialog } from './ui.js';
+import { $, showDialog } from './ui.js';
 
-const $ = (s) => document.querySelector(s);
 const INK = '#14213d';
 export const SIGNATURE_FONTS = ['Great Vibes', 'Dancing Script', 'Homemade Apple'];
 const STYLE_KEY = 'signatureStyle'; // last typed style picked, remembered on this phone

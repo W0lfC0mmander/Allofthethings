@@ -1,0 +1,35 @@
+# Opens every screen of the app in a test browser on each pull request, so a change can't
+# quietly break the field app. The test lives in tests/ and isn't part of the app.
+name: Check the app
+
+on:
+  pull_request:
+  push:
+    branches: [claude/project-thread-ijr5er]
+  workflow_dispatch:
+
+jobs:
+  screens:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-report
+          path: |
+            tests/playwright-report
+            tests/test-results
+          retention-days: 7

@@ -1,0 +1,11 @@
+{
+  "name": "zone-sense-checks",
+  "private": true,
+  "description": "Opens every screen of the app in a test browser. Not part of the app itself.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

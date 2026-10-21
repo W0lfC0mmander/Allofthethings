@@ -9,15 +9,6 @@ import { WATER_SOURCES, zoneName } from './ui.js';
 const APP = 'wetcheck';
 const FORMAT = 1;
 
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(blob);
-  });
-}
-
 // Restored photos get their own bytes in memory. A Blob that only points into the picked
 // backup file loses its contents on iPhone and iPad once Safari lets go of that file, which
 // showed as photos turning into question marks after a report was edited.
@@ -29,18 +20,7 @@ async function dataUrlToBlob(url) {
   return ownBlob(await (await fetch(url)).blob());
 }
 
-// Photos and logos are Blobs, which JSON can't hold: store them as { $blob: "data:..." }.
-async function encode(value) {
-  if (value instanceof Blob) return { $blob: await blobToDataUrl(value) };
-  if (Array.isArray(value)) return Promise.all(value.map(encode));
-  if (value && typeof value === 'object') {
-    const out = {};
-    for (const [k, v] of Object.entries(value)) out[k] = await encode(v);
-    return out;
-  }
-  return value;
-}
-
+// Older .json backups stored photos and logos as { $blob: "data:..." }.
 async function decode(value) {
   if (value && typeof value === 'object' && typeof value.$blob === 'string') return dataUrlToBlob(value.$blob);
   if (Array.isArray(value)) return Promise.all(value.map(decode));

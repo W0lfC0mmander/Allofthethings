@@ -7,7 +7,6 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 const $ = (s) => document.querySelector(s);
 const token = new URLSearchParams(location.search).get('a') || '';
 const INK = '#14213d';
-let data = null;
 let mode = 'type';
 
 const money = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -41,7 +40,6 @@ function fail(text) {
 }
 
 function show(d) {
-  data = d;
   if (/^#[0-9a-f]{6}$/i.test(d.accent || '')) {
     document.documentElement.style.setProperty('--accent', d.accent);
     document.querySelector('meta[name="theme-color"]').content = d.accent;

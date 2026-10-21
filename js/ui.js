@@ -1,6 +1,6 @@
 // Shared dialogs: name prompt, action sheet, confirmation.
 
-const $ = (sel) => document.querySelector(sel);
+export const $ = (sel) => document.querySelector(sel);
 
 // Resolves with returnValue when the dialog closes.
 export function showDialog(dialog) {
