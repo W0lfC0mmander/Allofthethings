@@ -912,23 +912,26 @@ dialog.sheet {
   width: 100%;
   max-width: 560px;
   margin: auto auto 0;
-  padding: 14px 16px calc(env(safe-area-inset-bottom) + 16px);
+  padding: 12px 14px calc(env(safe-area-inset-bottom) + 14px);
   border-radius: 22px 22px 0 0;
   max-height: 88dvh;
   display: none;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 dialog.sheet[open] { display: flex; }
 .sheet-head { display: flex; align-items: center; gap: 8px; }
-.sheet-head h2 { flex: 1; margin: 0; text-align: center; font-size: 1.15rem; font-weight: 800; color: var(--text); outline: 0; }
-.sheet-head .btn { padding: 8px 10px; min-width: 76px; }
-.sheet-body { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; justify-content: flex-end; }
-.sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.sheet-btn { min-height: 56px; padding: 10px 14px; border: 0; border-radius: var(--radius); background: var(--accent-soft); color: var(--text); font: inherit; font-weight: 700; text-align: left; }
+.sheet-head h2 { flex: 1; margin: 0; text-align: center; font-size: 1.1rem; font-weight: 800; color: var(--text); outline: 0; }
+.sheet-head .btn { padding: 6px 8px; min-width: 76px; }
+.sheet-body { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; justify-content: flex-end; }
+/* Buttons pair up evenly; an odd one out takes the whole row. */
+.sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 8px; }
+.sheet-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+.sheet-btn { min-height: 48px; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--accent-soft); color: var(--text); font: inherit; font-size: 0.95rem; font-weight: 700; text-align: left; display: flex; align-items: center; line-height: 1.2; }
 .sheet-btn:active { filter: brightness(0.94); }
-.sheet-btn.common { min-height: 72px; background: var(--accent); color: var(--accent-ink); font-size: 1.05rem; }
-.sheet-btn.rare { background: var(--bg); color: var(--muted); min-height: 48px; font-size: 0.92rem; }
+.sheet-btn.common { min-height: 58px; background: var(--accent); color: var(--accent-ink); font-size: 1rem; }
+.sheet-btn.rare { background: var(--bg); color: var(--muted); }
+.sheet-btn.issue { min-height: 54px; }
 
 /* Finding form: compact, with Save always in reach at the bottom. */
 .photo-preview img { max-height: 28vh; }

@@ -49,14 +49,32 @@ export async function reportMenu(report) {
 // The zone a report is being worked in. New findings go into it unless changed.
 const zoneOf = (report) => (report.currentZone ?? '1');
 
-// Next or previous zone: steps the number at the end ("4" -> "5", "A3" -> "A4"). The
-// Controller and Pump sections come before Zone 1: Controller -> Pump -> Zone 1 -> Zone 2.
+// The sections this report steps through before Zone 1: a system has a pump or a backflow, so
+// the controller's water source decides which one (municipal: Backflow, pump types: Pump).
+// With no controller or water source known, all of them. Set when a report is opened.
+let activeSections = SECTIONS;
+function sectionsFor(report, path) {
+  const all = path.length ? path[0].controllers || [] : [];
+  const mine = report.controllerId ? all.filter((c) => c.id === report.controllerId) : all;
+  const waters = mine.map((c) => c.water);
+  if (!waters.length || waters.some((w) => !w)) return SECTIONS;
+  const pumped = waters.some((w) => w.startsWith('pump'));
+  const municipal = waters.includes('municipal');
+  return SECTIONS.filter((z) => (z === 'Pump' ? pumped : z === 'Backflow' ? municipal : true));
+}
+
+// Next or previous zone: steps the number at the end ("4" -> "5", "A3" -> "A4"). The sections
+// come before Zone 1: Controller -> Pump or Backflow -> Zone 1 -> Zone 2.
 function stepZone(zone, delta) {
   const s = SECTIONS.indexOf(zone);
-  if (s >= 0) return s + delta < 0 ? SECTIONS[0] : SECTIONS[s + delta] || '1';
+  if (s >= 0) {
+    // A section this report skips (an older report, or a changed controller) steps to its neighbor.
+    const next = delta > 0 ? SECTIONS.slice(s + 1).find((z) => activeSections.includes(z)) : SECTIONS.slice(0, s).reverse().find((z) => activeSections.includes(z));
+    return next || (delta > 0 ? '1' : SECTIONS[0]);
+  }
   const m = zone.match(/^(.*?)(\d+)$/);
   if (!m) return zone ? zone : '1';
-  if (!m[1] && Number(m[2]) + delta < 1) return SECTIONS[SECTIONS.length - 1];
+  if (!m[1] && Number(m[2]) + delta < 1) return activeSections[activeSections.length - 1];
   return m[1] + Math.max(1, Number(m[2]) + delta);
 }
 
@@ -102,6 +120,7 @@ async function renderReport(id) {
   if (!report) return (location.hash = '#/');
   const path = await db.getPath(report.folderId);
   setCurrent({ kind: 'report', id, record: report });
+  activeSections = sectionsFor(report, path);
 
   setHeader({
     title: report.name,
@@ -760,8 +779,8 @@ $('#disclaimer-edit').addEventListener('click', async () => {
 });
 
 // Each section gets its own short list: the Controller section only the controller issues,
-// the Pump section only the pump issues, and zones everything else. "Other" shows everywhere.
-const SECTION_GROUPS = { Controller: 'Controller and sensors', Pump: 'Pump' };
+// Pump and Backflow only theirs, and zones everything else. "Other" shows everywhere.
+const SECTION_GROUPS = { Controller: 'Controller and sensors', Pump: 'Pump', Backflow: 'Backflow' };
 function groupsForZone(list, zone) {
   const sectionGroups = Object.values(SECTION_GROUPS);
   return list.groups.filter((g) => g.name === 'Other' || (SECTION_GROUPS[zone] ? g.name === SECTION_GROUPS[zone] : !sectionGroups.includes(g.name)));
@@ -877,7 +896,7 @@ async function addFinding(preset = null) {
 // reach and the rest above them. Step 2 shows the group's issues. Resolves with the issue name,
 // or null if cancelled.
 
-const COMMON_GROUPS = ['Broken heads', 'Head and nozzle adjustments', 'Pipe issues', 'Valve issues'];
+const COMMON_GROUPS = ['Broken heads', 'Broken Risers & Nozzles', 'Leaks & Breaks', 'Head and nozzle adjustments'];
 const SHORT_GROUPS = { 'Head and nozzle adjustments': 'Head & nozzle adjustments' };
 
 async function pickIssue() {
@@ -896,24 +915,25 @@ async function pickIssue() {
     b.addEventListener('click', onClick);
     return b;
   };
+  // A group with a single issue (Other, Backflow) goes straight to the finding.
+  const choose = (g) => (g.issues.length === 1 ? sheet.close(`issue:${g.issues[0].name}`) : showIssues(g));
   const showGroups = () => {
     $('#sheet-title').textContent = `What's wrong? ${zone ? zoneName(zone) : ''}`.trim();
     $('#sheet-back').hidden = true;
-    // Sections (Controller, Pump) have only their own group: go straight to its issues.
-    if (groups.length <= 2 && isSection(zone)) return showIssues(groups.find((g) => g.name !== 'Other') || groups[0]);
-    const common = COMMON_GROUPS.map((n) => groups.find((g) => g.name === n)).filter(Boolean);
+    // Sections show just their own group and Other, all in the big buttons.
+    const common = isSection(zone) ? groups : COMMON_GROUPS.map((n) => groups.find((g) => g.name === n)).filter(Boolean);
     const rest = groups.filter((g) => !common.includes(g));
     const grid = (items, cls) => {
       const el = document.createElement('div');
       el.className = 'sheet-grid';
-      el.append(...items.map((g) => button(SHORT_GROUPS[g.name] || g.name || 'Issues', cls, () => showIssues(g))));
+      el.append(...items.map((g) => button(SHORT_GROUPS[g.name] || g.name || 'Issues', cls, () => choose(g))));
       return el;
     };
     body.replaceChildren(...[rest.length && grid(rest, 'rare'), common.length && grid(common, 'common')].filter(Boolean));
   };
   const showIssues = (group) => {
     $('#sheet-title').textContent = group.name || 'Issues';
-    $('#sheet-back').hidden = isSection(zone);
+    $('#sheet-back').hidden = false;
     body.replaceChildren(...group.issues.map((i) => button(i.name, 'issue', () => sheet.close(`issue:${i.name}`))));
   };
   $('#sheet-back').onclick = showGroups;

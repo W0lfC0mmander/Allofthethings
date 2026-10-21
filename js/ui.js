@@ -62,8 +62,9 @@ export const WATER_SOURCES = {
   pump: 'Pump',
 };
 
-// Sections a wet check covers before Zone 1, kept in the zone field under these names.
-export const SECTIONS = ['Controller', 'Pump'];
+// Sections a wet check covers before Zone 1, kept in the zone field under these names. A system
+// has a pump or a backflow, so a report only steps through the one its controller's water source needs.
+export const SECTIONS = ['Controller', 'Pump', 'Backflow'];
 export const isSection = (z) => SECTIONS.includes(z);
 export const zoneName = (z) => (isSection(z) ? z : z ? `Zone ${z}` : 'No zone');
 // ["Controller", "1", "3"] -> "Controller, Zones 1, 3".

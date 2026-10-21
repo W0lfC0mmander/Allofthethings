@@ -53,11 +53,52 @@ export async function saveIssueList(list) {
 // before: the issue it goes in front of (none = end of the group); afterGroup: where a group
 // that doesn't exist yet is created.
 const NEW_DEFAULTS = [
-  { name: 'Broken nozzle', group: 'Head and nozzle adjustments', before: 'Clogged nozzle' },
+  { name: 'Broken nozzle', group: 'Broken Risers & Nozzles', afterGroup: 'Broken heads' },
+  { name: 'Funny pipe leak', group: 'Leaks & Breaks', before: 'Mainline leak' },
   { name: 'Short circuit alert', group: 'Controller and sensors', before: 'Rain sensor Issue' },
   { name: 'Master valve or pump start alert', group: 'Controller and sensors', before: 'Rain sensor Issue' },
   ...['Pump not starting', 'Pump low pressure', 'Pump losing prime', 'Pump leaking', 'Pump issue'].map((name) => ({ name, group: 'Pump', afterGroup: 'Controller and sensors' })),
 ];
+
+// Default groups renamed later. Edited lists are renamed once (see MOVED_DEFAULTS); property
+// profiles keep the old name on issues added there, so those are matched through this table.
+const RENAMED_GROUPS = { 'Pipe issues': 'Leaks & Breaks' };
+
+// Default issues moved to another group later. Each moves once in an edited list, keeping its
+// price and on/off setting; 'issuesMoved' remembers which, so moving one back later sticks.
+const MOVED_DEFAULTS = [
+  { name: 'Broken nozzle', group: 'Broken Risers & Nozzles', afterGroup: 'Broken heads' },
+  { name: 'Broken riser', group: 'Broken Risers & Nozzles', afterGroup: 'Broken heads' },
+  { name: 'Backflow issue', group: 'Backflow', afterGroup: 'Pump' },
+];
+
+async function moveOldDefaults() {
+  const done = (await db.getSetting('issuesMoved')) || [];
+  const todo = MOVED_DEFAULTS.filter((m) => !done.includes(m.name));
+  if (!todo.length) return;
+  const saved = await db.getSetting('issueList');
+  if (saved && saved.groups) {
+    const list = clone(saved);
+    for (const [from, to] of Object.entries(RENAMED_GROUPS)) {
+      const g = list.groups.find((x) => x.name === from);
+      if (g && !list.groups.some((x) => x.name === to)) g.name = to;
+    }
+    for (const m of todo) {
+      const at = list.groups.find((g) => g.issues.some((i) => i.name === m.name));
+      if (!at) continue; // deleted from the list: stays deleted
+      const issue = at.issues.splice(at.issues.findIndex((i) => i.name === m.name), 1)[0];
+      let g = list.groups.find((x) => x.name === m.group);
+      if (!g) {
+        g = { name: m.group, issues: [] };
+        const after = list.groups.findIndex((x) => x.name === m.afterGroup);
+        list.groups.splice(after < 0 ? list.groups.length : after + 1, 0, g);
+      }
+      g.issues.push(issue);
+    }
+    await saveIssueList(list);
+  }
+  await db.setSetting('issuesMoved', [...done, ...todo.map((m) => m.name)]);
+}
 
 // Default issues renamed later. Each is renamed once on this phone, in an edited list and on
 // saved findings, report prices and property profiles; 'issuesRenamed' remembers which.
@@ -82,6 +123,7 @@ async function renameOldDefaults() {
 
 export async function addNewDefaults() {
   await renameOldDefaults();
+  await moveOldDefaults();
   const saved = await db.getSetting('issueList');
   const done = (await db.getSetting('issuesAdded')) || [];
   const todo = NEW_DEFAULTS.filter((d) => !done.includes(d.name));
@@ -154,9 +196,10 @@ export function effectiveList(list, profile) {
     })),
   };
   for (const a of profile.added || []) {
-    let g = out.groups.find((x) => x.name === a.group);
+    const group = RENAMED_GROUPS[a.group] || a.group;
+    let g = out.groups.find((x) => x.name === group);
     if (!g) {
-      g = { name: a.group || 'Property issues', issues: [] };
+      g = { name: group || 'Property issues', issues: [] };
       out.groups.push(g);
     }
     g.issues.push({ name: a.name, price: a.price ?? null, off: !!a.off, own: true });
