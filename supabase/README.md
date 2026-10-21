@@ -25,7 +25,7 @@ The app's Supabase address and public key are in `js/config.js`. Do these steps 
 
 Until you verify a domain, Resend only delivers to the email address you signed up to Resend with. So for the first test, send a report to yourself.
 
-When you're ready for customers: in Resend, go to **Domains → Add domain** and add the DNS records it shows at your domain host. Then add the secret `RESEND_FROM` set to something like `Acme Irrigation <approvals@zonesenseirrigation.com>`.
+When you're ready for customers: in Resend, go to **Domains → Add domain** and add the DNS records it shows at your domain host. Then add the secret `RESEND_FROM` set to `Zone Sense <approvals@zonesenseirrigation.com>`. Emails to customers show each company's own name ("Acme Irrigation via Zone Sense") and replies go to the sender's sign-in email.
 
 ## 5. Sign in from the app
 Go to **Settings → Online approvals** and sign in with the email and password from step 2. Then open a report, tap ⋮ and choose **Send for approval**.
