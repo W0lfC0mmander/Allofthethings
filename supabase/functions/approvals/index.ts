@@ -25,8 +25,8 @@ import { PDFDocument, StandardFonts, rgb, PDFName, PDFArray, PDFDict } from 'npm
 
 const env = (k: string, d = '') => Deno.env.get(k) || d;
 const BUCKET = 'approvals';
-const APPROVE_URL = () => env('APPROVE_URL', 'https://dnotsonice.github.io/Allofthethings/approve.html');
-const FROM = () => env('RESEND_FROM', 'Wet Check <onboarding@resend.dev>');
+const APPROVE_URL = () => env('APPROVE_URL', 'https://app.zonesenseirrigation.com/approve.html');
+const FROM = () => env('RESEND_FROM', 'Zone Sense <onboarding@resend.dev>');
 const MAX_PDF = 25 * 1024 * 1024;
 const MAX_ATTACHMENT = 20 * 1024 * 1024;
 
@@ -94,13 +94,23 @@ async function download(path: string) {
   return new Uint8Array(await data.arrayBuffer());
 }
 
-async function email(msg: { to: string[]; subject: string; html: string; replyTo?: string; attachments?: { filename: string; content: string }[] }) {
+// Every company sends from the one Zone Sense address, under its own name ("Acme Irrigation
+// via Zone Sense"), with replies going to the person who sent the proposal.
+function sender(company?: string) {
+  const from = FROM();
+  const name = (company || '').replace(/["<>\r\n]/g, '').trim().slice(0, 80);
+  if (!name) return from;
+  const addr = (from.match(/<([^>]+)>/) || [, from.trim()])[1];
+  return `"${name} via Zone Sense" <${addr}>`;
+}
+
+async function email(msg: { to: string[]; subject: string; html: string; fromName?: string; replyTo?: string; attachments?: { filename: string; content: string }[] }) {
   const key = env('RESEND_API_KEY');
   if (!key) throw new Fail(500, 'Email isn’t set up yet: add RESEND_API_KEY to the function’s secrets.');
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: FROM(), to: msg.to, subject: msg.subject, html: msg.html, reply_to: msg.replyTo, attachments: msg.attachments }),
+    body: JSON.stringify({ from: sender(msg.fromName), to: msg.to, subject: msg.subject, html: msg.html, reply_to: msg.replyTo, attachments: msg.attachments }),
   });
   if (!res.ok) {
     const t = await res.text();
@@ -364,6 +374,7 @@ async function send(req: Request) {
   try {
     await email({
       to: [to],
+      fromName: row.company_name,
       replyTo: u.email,
       subject: `Please review and approve: ${row.property || row.report_name}`,
       html: emailShell(row.accent, company, `
@@ -468,7 +479,7 @@ async function sign(req: Request, body: any) {
   // The approval is saved; a failed email shouldn't tell the customer it wasn't.
   await Promise.allSettled([
     email({
-      to: [row.customer_email], replyTo: row.owner_email, attachments,
+      to: [row.customer_email], fromName: row.company_name, replyTo: row.owner_email, attachments,
       subject: `Your signed approval: ${row.property || row.report_name}`,
       html: emailShell(row.accent, company, `<p>Thank you, ${esc(name)}.</p><p>You approved the proposal${esc(total)} for <strong>${esc(row.property)}</strong>. ${copy}</p>`),
     }),
@@ -495,7 +506,7 @@ async function decline(req: Request, body: any) {
   await Promise.allSettled([email({
     to: [row.owner_email], replyTo: row.customer_email,
     subject: `Declined: ${row.property || row.report_name}`,
-    html: emailShell(row.accent, row.company_name || 'Wet Check', `<p>${esc(name || row.customer_email)} declined the proposal for <strong>${esc(row.property)}</strong>.</p>${reason ? `<p style="white-space:pre-wrap;border-left:3px solid #e5e7eb;padding-left:12px">${esc(reason)}</p>` : ''}<p>Reply to this email to reach them.</p>`),
+    html: emailShell(row.accent, row.company_name || 'Zone Sense', `<p>${esc(name || row.customer_email)} declined the proposal for <strong>${esc(row.property)}</strong>.</p>${reason ? `<p style="white-space:pre-wrap;border-left:3px solid #e5e7eb;padding-left:12px">${esc(reason)}</p>` : ''}<p>Reply to this email to reach them.</p>`),
   })]);
   return json(await publicView({ ...row, status: 'declined', decided_at: now }));
 }
