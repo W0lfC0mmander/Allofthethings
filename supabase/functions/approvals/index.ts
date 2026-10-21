@@ -10,14 +10,17 @@
 //     view    { token } -> the proposal summary and a link to its PDF.
 //     sign    { token, name, method, signature (PNG data URL), date, agree: true }
 //     decline { token, name, reason }
+//   From anyone using the app (no sign-in):
+//     bug     multipart form: action=bug, meta (JSON: description, email, info), screenshot
+//             (optional image). Emails the report to BUG_REPORT_EMAIL and nobody else.
 //
 // Signing fills the PDF's customer approval fields (signature image, date, printed name),
 // adds a signature certificate page (who, when, IP, device, fingerprint of the original),
 // stores the signed copy and emails it to the customer and the technician.
 //
 // Secrets (Edge Functions > Secrets): RESEND_API_KEY, and optionally RESEND_FROM
-// ("Company <approvals@yourdomain.com>"), APPROVE_URL and ALLOWED_EMAILS (comma separated
-// accounts that may send). SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
+// ("Company <approvals@yourdomain.com>"), APPROVE_URL, ALLOWED_EMAILS (comma separated
+// accounts that may send) and BUG_REPORT_EMAIL (where bug reports go). SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
 // Turn "Verify JWT" off for this function: the customer's page has no sign-in.
 
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
@@ -29,6 +32,8 @@ const APPROVE_URL = () => env('APPROVE_URL', 'https://app.zonesenseirrigation.co
 const FROM = () => env('RESEND_FROM', 'Zone Sense <onboarding@resend.dev>');
 const MAX_PDF = 25 * 1024 * 1024;
 const MAX_ATTACHMENT = 20 * 1024 * 1024;
+const BUG_REPORT_EMAIL = () => env('BUG_REPORT_EMAIL', 'djimenez@rainsenseirrigation.com');
+const MAX_SCREENSHOT = 8 * 1024 * 1024;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -325,9 +330,8 @@ const pdfSafe = (s: string) => s.normalize('NFKD').replace(/[‘’]/g, "'").rep
 
 // ---------- actions ----------
 
-async function send(req: Request) {
+async function send(req: Request, form: FormData) {
   const u = await user(req);
-  const form = await req.formData();
   const meta = JSON.parse(String(form.get('meta') || '{}'));
   const pdf = form.get('pdf');
   if (!(pdf instanceof File) || !pdf.size) throw new Fail(400, 'The proposal PDF is missing.');
@@ -511,12 +515,46 @@ async function decline(req: Request, body: any) {
   return json(await publicView({ ...row, status: 'declined', decided_at: now }));
 }
 
+// A bug report from the app's Settings. It needs no sign-in, so anyone using the app can
+// send one, but it only ever goes to BUG_REPORT_EMAIL.
+async function bug(form: FormData) {
+  let meta: any = {};
+  try {
+    meta = JSON.parse(String(form.get('meta') || '{}'));
+  } catch { /* empty report */ }
+  const text = clip(meta.description, 5000);
+  if (!text) throw new Fail(400, 'Say what happened first.');
+  const from = clip(meta.email, 200).toLowerCase();
+  const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from) ? from : undefined;
+  const info = meta.info && typeof meta.info === 'object' ? Object.entries(meta.info).slice(0, 20) : [];
+  const shot = form.get('screenshot');
+  const attachments = shot instanceof File && shot.size && shot.size <= MAX_SCREENSHOT && /^image\//.test(shot.type)
+    ? [{ filename: `screenshot.${shot.type === 'image/png' ? 'png' : 'jpg'}`, content: base64(new Uint8Array(await shot.arrayBuffer())) }]
+    : undefined;
+  const version = (info.find(([k]) => k === 'App version') || [])[1];
+  const rows = info.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#6b7280;vertical-align:top;white-space:nowrap">${esc(clip(k, 40))}</td><td style="padding:4px 0;white-space:pre-wrap;word-break:break-word">${esc(clip(v, 2000))}</td></tr>`).join('');
+  await email({
+    to: [BUG_REPORT_EMAIL()],
+    replyTo,
+    subject: `Bug report${version ? ` (v${clip(version, 10)})` : ''}: ${text.replace(/\s+/g, ' ').slice(0, 70)}`,
+    html: emailShell('#0e7490', 'Zone Sense bug report', `
+      <p style="white-space:pre-wrap">${esc(text)}</p>
+      <p style="color:#6b7280">From: ${esc(replyTo || 'no email given')}${attachments ? ' · screenshot attached' : ''}</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:13px;border-top:1px solid #e5e7eb;padding-top:8px;width:100%">${rows}</table>`),
+    attachments,
+  });
+  return json({ ok: true });
+}
+
 export async function handle(req: Request) {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Not found' }, 404);
   try {
     const isForm = (req.headers.get('content-type') || '').startsWith('multipart/form-data');
-    if (isForm) return await send(req);
+    if (isForm) {
+      const form = await req.formData();
+      return form.get('action') === 'bug' ? await bug(form) : await send(req, form);
+    }
     const body = await req.json().catch(() => ({}));
     switch (body.action) {
       case 'status': return await status(req, body);

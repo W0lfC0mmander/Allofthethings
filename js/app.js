@@ -12,7 +12,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 55;
+const APP_VERSION = 56;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -29,9 +29,19 @@ function showToast(msg, kind = 'error') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (t.hidden = true), 8000);
 }
-window.addEventListener('error', (e) => showToast(`Something went wrong: ${e.message}`));
+// The last few errors go along with a bug report.
+const recentErrors = [];
+function noteError(msg) {
+  recentErrors.push(`${new Date().toISOString()} ${location.hash || '#/'} ${msg}`);
+  if (recentErrors.length > 10) recentErrors.shift();
+}
+window.addEventListener('error', (e) => {
+  noteError(`${e.message}${e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : ''}`);
+  showToast(`Something went wrong: ${e.message}`);
+});
 window.addEventListener('unhandledrejection', (e) => {
   const r = e.reason;
+  noteError(String((r && (r.stack || r.message)) || r).slice(0, 500));
   showToast(`Something went wrong: ${(r && r.message) || r}`);
 });
 
@@ -1183,6 +1193,108 @@ async function cloudDialog() {
   };
   await showDialog(dialog);
   return !!signedInEmail();
+}
+
+// ---------- Report a bug ----------
+// Emailed to the Zone Sense team through the approvals function (no sign-in needed), with
+// the app version, device and recent errors. Without a connection it opens a mail draft.
+
+const BUG_EMAIL = 'djimenez@rainsenseirrigation.com';
+
+async function bugInfo() {
+  const info = {
+    'App version': APP_VERSION,
+    Screen: location.hash || '#/',
+    Device: navigator.userAgent,
+    'Screen size': `${screen.width}×${screen.height} (window ${innerWidth}×${innerHeight}, ×${devicePixelRatio})`,
+    Installed: matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'yes' : 'no',
+    Language: navigator.language,
+    'Signed in as': signedInEmail() || 'not signed in',
+    Time: new Date().toString(),
+  };
+  try {
+    const { usage, quota } = await navigator.storage.estimate();
+    info.Storage = `${(usage / 1048576).toFixed(1)} MB used of ${(quota / 1048576).toFixed(0)} MB`;
+  } catch {}
+  if (recentErrors.length) info['Recent errors'] = recentErrors.join('\n');
+  return info;
+}
+
+function bugMailto(text, info) {
+  const lines = Object.entries(info).map(([k, v]) => `${k}: ${v}`).join('\n');
+  const body = `${text}\n\n----\n${lines}`.slice(0, 1800);
+  return `mailto:${BUG_EMAIL}?subject=${encodeURIComponent('Zone Sense bug report')}&body=${encodeURIComponent(body)}`;
+}
+
+$('#settings-bug').addEventListener('click', reportBug);
+
+async function reportBug() {
+  const dialog = $('#bug-dialog');
+  const err = $('#bug-error');
+  const img = $('#bug-shot-img');
+  let shot = null;
+  const showShot = () => {
+    if (img.src) URL.revokeObjectURL(img.src);
+    img.hidden = !shot;
+    img.src = shot ? URL.createObjectURL(shot) : '';
+    $('#bug-shot-label').textContent = shot ? 'Change' : 'Add screenshot';
+    $('#bug-shot-remove').hidden = !shot;
+  };
+  err.hidden = true;
+  $('#bug-text').value = '';
+  if (!$('#bug-email').value) $('#bug-email').value = signedInEmail();
+  showShot();
+  $('#bug-shot-input').onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      shot = await compressPhoto(file);
+      showShot();
+    } catch {
+      showToast('That picture couldn’t be read. Try another one.');
+    }
+  };
+  $('#bug-shot-remove').onclick = () => {
+    shot = null;
+    showShot();
+  };
+  $('#bug-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const text = $('#bug-text').value.trim();
+    if (!text) return;
+    const info = await bugInfo();
+    const button = $('#bug-submit');
+    button.disabled = true;
+    button.textContent = 'Sending…';
+    err.hidden = true;
+    try {
+      if (!cloudReady || !navigator.onLine) throw new Error('offline');
+      const form = new FormData();
+      form.append('action', 'bug');
+      form.append('meta', JSON.stringify({ description: text, email: $('#bug-email').value.trim(), info }));
+      if (shot) form.append('screenshot', shot, 'screenshot.jpg');
+      await callApprovals(form, { auth: false });
+      dialog.close('ok');
+      showToast('Thanks! Your bug report was sent.', 'ok');
+    } catch (x) {
+      if (x.message === 'offline' || /No connection/.test(x.message)) {
+        // Mail drafts can't carry the screenshot, so say so.
+        dialog.close('ok');
+        location.href = bugMailto(text, info);
+        showToast(shot ? 'You’re offline, so a mail draft opened. Attach the screenshot to it before sending.' : 'You’re offline, so a mail draft opened. Send it when you’re back online.', 'ok');
+      } else {
+        err.textContent = `${x.message} You can also email ${BUG_EMAIL}.`;
+        err.hidden = false;
+      }
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Send';
+    }
+  };
+  await showDialog(dialog);
+  shot = null;
+  showShot();
 }
 
 // Asks who to send to, confirms the technician signature, then sends the report's PDF.
