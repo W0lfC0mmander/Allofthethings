@@ -110,6 +110,8 @@ async function renderReport(id) {
     back: true,
     more: true,
   });
+  $('#send-approval').hidden = !cloudReady;
+  $('#send-approval-label').textContent = report.approval && report.approval.status === 'sent' ? 'Send again' : 'Send for approval';
 
   const zone = zoneOf(report);
   $('#zone-value').textContent = zoneName(zone);
@@ -982,6 +984,7 @@ $('#mark-ok').addEventListener('click', () => addMark('ok'));
 $('#mark-fail').addEventListener('click', () => addMark('fail'));
 
 $('#export-pdf').addEventListener('click', () => exportPdf(current.record));
+$('#send-approval').addEventListener('click', () => sendForApproval(current.record));
 $('#show-coords').addEventListener('click', () => showCoordinates(current.record));
 $('#header-more').addEventListener('click', () => current.kind === 'report' && reportMenu(current.record));
 
