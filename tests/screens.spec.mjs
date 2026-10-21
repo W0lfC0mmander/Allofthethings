@@ -102,12 +102,33 @@ test('report: zones, finding form and PDF export', async ({ page }) => {
   await open(page, `#/r/${reportId}`, 'report-view', 'Wet check');
   await page.click('#zone-next');
   await expect(page.locator('#zone-value')).toHaveText('Zone 2');
-  await page.click('#add-finding');
+  await page.click('#pick-issue');
+  await expect(page.locator('#issue-sheet')).toBeVisible();
+  await page.locator('#issue-sheet .sheet-btn', { hasText: 'Broken heads' }).click();
+  await page.locator('#issue-sheet .sheet-btn.issue').first().click();
   await expect(page.locator('#finding-dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('#finding-dialog')).toBeHidden();
   await page.click('#export-pdf');
   await expect(page.locator('#pdf-title')).toHaveText('PDF ready', { timeout: 30000 });
+});
+
+test('new finding: photo first, then group and issue, then save', async ({ page }) => {
+  const { reportId } = await seed(page);
+  await open(page, `#/r/${reportId}`, 'report-view', 'Wet check');
+  const before = await page.locator('#finding-groups .card').count();
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/dock.png` });
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  await page.setInputFiles('#dock-camera', { name: 'a.png', mimeType: 'image/png', buffer: png });
+  await expect(page.locator('#issue-sheet')).toBeVisible();
+  await page.screenshot({ path: process.env.SHOTS ? `${process.env.SHOTS}/sheet-groups.png` : undefined });
+  await page.locator('#issue-sheet .sheet-btn', { hasText: 'Valve issues' }).click();
+  await page.locator('#issue-sheet .sheet-btn.issue').first().click();
+  await expect(page.locator('#photo-preview')).toBeVisible();
+  await page.screenshot({ path: process.env.SHOTS ? `${process.env.SHOTS}/form.png` : undefined });
+  await page.click('#finding-save');
+  await expect(page.locator('#finding-dialog')).toBeHidden();
+  await expect(page.locator('#finding-groups .card')).toHaveCount(before + 1);
 });
 
 test('the customer approval page and storage test page open', async ({ page }) => {

@@ -115,7 +115,6 @@ async function renderReport(id) {
 
   const zone = zoneOf(report);
   $('#zone-value').textContent = zoneName(zone);
-  $('#add-finding-label').textContent = zone ? `Add finding to ${zoneName(zone)}` : 'Add finding';
   $('#mark-fail').hidden = isSection(zone); // its X means a valve that won't open
   // Back stops at the controller, and at 1 for lettered zones like A1 (plain Zone 1 goes back to the pump).
   $('#zone-prev').disabled = zone === SECTIONS[0] || (!isSection(zone) && (!/\d+$/.test(zone) || /^.*\D0*1$/.test(zone)));
@@ -760,17 +759,21 @@ $('#disclaimer-edit').addEventListener('click', async () => {
   setDisclaimer(text, true); // editing it implies wanting it on this finding
 });
 
+// Each section gets its own short list: the Controller section only the controller issues,
+// the Pump section only the pump issues, and zones everything else. "Other" shows everywhere.
+const SECTION_GROUPS = { Controller: 'Controller and sensors', Pump: 'Pump' };
+function groupsForZone(list, zone) {
+  const sectionGroups = Object.values(SECTION_GROUPS);
+  return list.groups.filter((g) => g.name === 'Other' || (SECTION_GROUPS[zone] ? g.name === SECTION_GROUPS[zone] : !sectionGroups.includes(g.name)));
+}
+
 async function fillIssues(selected) {
   const list = (form.list = await issueListFor(current.record.folderId));
   const placeholder = new Option('Choose an issue', '');
   placeholder.disabled = true;
   const options = [placeholder];
-  // Each section gets its own short list: the Controller section only the controller issues,
-  // the Pump section only the pump issues, and zones everything else. "Other" shows everywhere.
   const zone = form.zone.value.trim();
-  const own = { Controller: 'Controller and sensors', Pump: 'Pump' };
-  const sectionGroups = Object.values(own);
-  const groups = list.groups.filter((g) => g.name === 'Other' || (own[zone] ? g.name === own[zone] : !sectionGroups.includes(g.name)));
+  const groups = groupsForZone(list, zone);
   // Keep an issue that has since been turned off, removed, or is from another section's list,
   // so editing doesn't lose it.
   const shown = (i) => !i.off || i.name === selected;
@@ -807,7 +810,7 @@ form.zone.addEventListener('change', async () => {
   updatePriceHint();
 });
 
-async function openFindingForm(finding) {
+async function openFindingForm(finding, preset = null) {
   form.title.textContent = finding ? 'Edit finding' : 'New finding';
   form.del.hidden = !finding;
   showPhotoError('');
@@ -818,9 +821,10 @@ async function openFindingForm(finding) {
   renderMorePhotos();
   setPhoto(finding ? finding.photo : null, finding ? finding.stamp || null : null);
   form.zone.value = finding ? finding.zone : zoneOf(current.record);
-  await fillIssues(finding ? finding.issue : '');
+  await fillIssues(finding ? finding.issue : preset ? preset.issue : '');
   form.note.value = finding ? finding.note : '';
   form.priceBox.hidden = !current.record.estimate;
+  form.priceHint.hidden = form.priceBox.hidden;
   form.price.value = finding && finding.price != null ? finding.price.toFixed(2) : '';
   updatePriceHint();
   form.property = await propertyFolder(current.record.folderId);
@@ -829,7 +833,11 @@ async function openFindingForm(finding) {
   // Hidden when turned off, unless this finding already has one (so it can still be removed).
   $('#disclaimer-box').hidden = !(await disclaimerOnFor(form.property)) && !(finding && finding.disclaimer);
   form.dialog.scrollTop = 0;
-  const result = await showDialog(form.dialog);
+  $('#finding-more').open = false;
+  const shown = showDialog(form.dialog);
+  // A photo taken before the issue was chosen goes into the form as if picked there.
+  if (preset && preset.file) onPhotoPicked({ target: { files: [preset.file], value: '' } }, true);
+  const result = await shown;
   const fields = {
     photo: form.photo,
     morePhotos: form.more.slice(),
@@ -849,8 +857,10 @@ async function openFindingForm(finding) {
   return { result, fields };
 }
 
-async function addFinding() {
-  const { result, fields } = await openFindingForm(null);
+// New finding: either order works. Photo first takes the picture and then asks what's wrong;
+// issue first picks the issue and then opens the form to add the photo.
+async function addFinding(preset = null) {
+  const { result, fields } = await openFindingForm(null, preset);
   if (result !== 'ok') return;
   const saved = await db.saveFinding(current.id, fields);
   checkStorage();
@@ -860,6 +870,69 @@ async function addFinding() {
   // Show the finding just added.
   const card = document.querySelector(`[data-id="${saved.id}"]`);
   if (card) card.scrollIntoView({ block: 'center' });
+}
+
+// ---------- Issue picker sheet ----------
+// Step 1 shows the groups, with the four most used at the bottom in big buttons within thumb
+// reach and the rest above them. Step 2 shows the group's issues. Resolves with the issue name,
+// or null if cancelled.
+
+const COMMON_GROUPS = ['Broken heads', 'Head and nozzle adjustments', 'Pipe issues', 'Valve issues'];
+const SHORT_GROUPS = { 'Head and nozzle adjustments': 'Head & nozzle adjustments' };
+
+async function pickIssue() {
+  const sheet = $('#issue-sheet');
+  const body = $('#sheet-body');
+  const list = await issueListFor(current.record.folderId);
+  const zone = zoneOf(current.record);
+  const groups = groupsForZone(list, zone)
+    .map((g) => ({ ...g, issues: g.issues.filter((i) => !i.off) }))
+    .filter((g) => g.issues.length);
+  const button = (text, cls, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `sheet-btn ${cls}`;
+    b.textContent = text;
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  const showGroups = () => {
+    $('#sheet-title').textContent = `What's wrong? ${zone ? zoneName(zone) : ''}`.trim();
+    $('#sheet-back').hidden = true;
+    // Sections (Controller, Pump) have only their own group: go straight to its issues.
+    if (groups.length <= 2 && isSection(zone)) return showIssues(groups.find((g) => g.name !== 'Other') || groups[0]);
+    const common = COMMON_GROUPS.map((n) => groups.find((g) => g.name === n)).filter(Boolean);
+    const rest = groups.filter((g) => !common.includes(g));
+    const grid = (items, cls) => {
+      const el = document.createElement('div');
+      el.className = 'sheet-grid';
+      el.append(...items.map((g) => button(SHORT_GROUPS[g.name] || g.name || 'Issues', cls, () => showIssues(g))));
+      return el;
+    };
+    body.replaceChildren(...[rest.length && grid(rest, 'rare'), common.length && grid(common, 'common')].filter(Boolean));
+  };
+  const showIssues = (group) => {
+    $('#sheet-title').textContent = group.name || 'Issues';
+    $('#sheet-back').hidden = isSection(zone);
+    body.replaceChildren(...group.issues.map((i) => button(i.name, 'issue', () => sheet.close(`issue:${i.name}`))));
+  };
+  $('#sheet-back').onclick = showGroups;
+  showGroups();
+  const result = await showDialog(sheet);
+  return result.startsWith('issue:') ? result.slice(6) : null;
+}
+
+async function addByIssue() {
+  const issue = await pickIssue();
+  if (issue) await addFinding({ issue });
+}
+
+async function addByPhoto(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const issue = await pickIssue();
+  if (issue) await addFinding({ issue, file });
 }
 
 async function editFinding(finding) {
@@ -988,4 +1061,10 @@ $('#send-approval').addEventListener('click', () => sendForApproval(current.reco
 $('#show-coords').addEventListener('click', () => showCoordinates(current.record));
 $('#header-more').addEventListener('click', () => current.kind === 'report' && reportMenu(current.record));
 
-$('#add-finding').addEventListener('click', addFinding);
+// Start GPS as the camera opens, so it's ready by the time the photo is taken.
+$('#add-finding').addEventListener('click', () => {
+  form.pendingPosition = getPosition();
+  $('#dock-camera').click();
+});
+$('#dock-camera').addEventListener('change', addByPhoto);
+$('#pick-issue').addEventListener('click', addByIssue);
