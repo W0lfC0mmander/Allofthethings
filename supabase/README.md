@@ -31,7 +31,7 @@ When you're ready for customers: in Resend, go to **Domains → Add domain** and
 Go to **Settings → Online approvals** and sign in with the email and password from step 2. Then open a report, tap ⋮ and choose **Send for approval**.
 
 ## How it works
-- `approvals` handles every request, using an `action` field: `send`, `status` and `cancel` from the app (signed in), and `view`, `sign` and `decline` from the customer's page. It also takes `bug` (Settings → **Report a bug**, no sign-in needed), which emails the report to `djimenez@rainsenseirrigation.com`; set the secret `BUG_REPORT_EMAIL` to send them somewhere else. The customer's page has no sign-in: the random token in the emailed link is what lets them in.
+- `approvals` handles every request, using an `action` field: `send`, `status` and `cancel` from the app (signed in), and `view`, `sign` and `decline` from the customer's page. It also takes `bug` (Settings → **Report a bug**, no sign-in needed), which emails the report to `djimenez@zonesenseirrigation.com`; set the secret `BUG_REPORT_EMAIL` to send them somewhere else. The customer's page has no sign-in: the random token in the emailed link is what lets them in.
 - The `approvals` table has row level security turned on and no policies, so only the function, using the service key, can read or write it.
 - Files go in the private `approvals` storage bucket under `<user id>/<approval id>/`: `proposal.pdf`, `logo`, `signature.png` and `signed.pdf`. People only reach them through links that expire.
 - The report keeps `report.approval` (status, who, when) and `report.approvalPdf` (the signed copy). The app checks for an answer when you open the report, and when you tap the approval card.
