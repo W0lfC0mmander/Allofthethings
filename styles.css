@@ -806,3 +806,23 @@ details.zone-group:not([open]) > .section-title { margin-top: 0; }
 
 /* Approvals dashboard: rows wrap so the status line is readable */
 #approvals-list .row-name, #approvals-list .row-detail { white-space: normal; overflow: visible; }
+
+/* Foldables and wide screens: finding cards flow into columns when there's room
+   (unfolded inner screens, tablets), and stay one column on narrow cover screens. */
+.cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); align-items: start; }
+@media (min-width: 1000px) {
+  body.in-report main { padding-left: max(12px, calc((100% - 960px) / 2)); padding-right: max(12px, calc((100% - 960px) / 2)); }
+}
+.toolbar { flex-wrap: wrap; }
+
+/* Short landscape screens (a cover screen turned sideways): zone controls sit in one row
+   so the findings still get most of the height. */
+@media (max-height: 520px) and (min-width: 560px) {
+  .zone-panel { display: flex; gap: 12px; align-items: center; justify-content: center; padding-top: 8px; padding-bottom: calc(env(safe-area-inset-bottom) + 8px); }
+  .zone-row { flex: 1; margin: 0; }
+  .add-row { flex: 1.4; margin: 0; }
+  .zone-step, .zone-current { height: 46px; }
+  .zone-step { width: 46px; }
+  .zone-caption { display: none; }
+  .bar { min-height: 52px; padding-top: calc(env(safe-area-inset-top) + 6px); padding-bottom: 6px; }
+}
