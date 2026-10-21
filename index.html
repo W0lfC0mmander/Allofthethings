@@ -14,6 +14,60 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Sign-in. Covers the app until someone on a company's team is signed in. -->
+  <section id="gate" class="gate" hidden>
+    <div class="gate-box">
+      <img class="gate-logo" src="icons/icon-192.png" alt="">
+      <h1 class="gate-title">Zone Sense</h1>
+
+      <form id="gate-signin" hidden>
+        <p class="gate-text">Sign in to use the app. Your reports stay on this phone, and you stay signed in when you're offline.</p>
+        <label class="label" for="gate-email">Email</label>
+        <input id="gate-email" class="field" type="email" autocomplete="username" autocapitalize="off" maxlength="200" required>
+        <label class="label" for="gate-pass">Password</label>
+        <input id="gate-pass" class="field" type="password" autocomplete="current-password" maxlength="200" required>
+        <button id="gate-signin-btn" type="submit" class="btn primary wide">Sign in</button>
+        <button id="gate-forgot" type="button" class="btn wide">Forgot password?</button>
+        <p class="hint gate-hint">Zone Sense is invitation only for now. Ask your company's owner to invite you.</p>
+      </form>
+
+      <form id="gate-password" hidden>
+        <p id="gate-password-text" class="gate-text"></p>
+        <div id="gate-name-box">
+          <label class="label" for="gate-name">Your name</label>
+          <input id="gate-name" class="field" type="text" autocomplete="name" autocapitalize="words" maxlength="120">
+        </div>
+        <label class="label" for="gate-newpass">Password</label>
+        <input id="gate-newpass" class="field" type="password" autocomplete="new-password" minlength="8" maxlength="200" required>
+        <label class="gate-show"><input id="gate-show" type="checkbox"> Show password</label>
+        <button id="gate-password-btn" type="submit" class="btn primary wide">Save and continue</button>
+      </form>
+
+      <form id="gate-company" hidden>
+        <p class="gate-text">Your account isn't on a company's team yet. As a Zone Sense admin, you can set up your own company. You'll be its owner and can invite your techs.</p>
+        <label class="label" for="gate-company-name">Company name</label>
+        <input id="gate-company-name" class="field" type="text" autocapitalize="words" maxlength="120" required>
+        <button id="gate-company-btn" type="submit" class="btn primary wide">Set up company</button>
+      </form>
+
+      <div id="gate-working" hidden>
+        <p id="gate-working-text" class="gate-text">Checking your account…</p>
+      </div>
+
+      <div id="gate-message" hidden>
+        <p id="gate-message-text" class="gate-text"></p>
+        <button id="gate-retry" type="button" class="btn primary wide">Try again</button>
+      </div>
+
+      <p id="gate-error" class="hint warn" role="alert" hidden></p>
+      <div id="gate-foot" class="gate-foot">
+        <span id="gate-who"></span>
+        <button id="gate-signout" type="button" class="btn small">Sign out</button>
+        <button id="gate-bug" type="button" class="btn small">Report a problem</button>
+      </div>
+    </div>
+  </section>
+
   <header class="bar">
     <button id="back" class="icon-btn" aria-label="Back" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -86,6 +140,28 @@
       <p id="approvals-empty" class="empty" hidden>Nothing here yet. Open a report, tap ⋮ and choose <strong>Send for approval</strong>, and it shows up here.</p>
     </section>
 
+    <section id="account-view" hidden>
+      <h2 class="section-title">You</h2>
+      <ul class="list">
+        <li class="row"><div class="row-open"><span class="row-text"><span id="account-email" class="row-name"></span><span id="account-role" class="row-detail"></span></span></div><button id="account-signout" type="button" class="row-action">Sign out</button></li>
+      </ul>
+      <h2 class="section-title">Company</h2>
+      <ul class="list">
+        <li class="row"><button id="account-company" type="button" class="row-open"><span class="row-text"><span id="account-company-name" class="row-name"></span><span id="account-company-detail" class="row-detail"></span></span></button></li>
+      </ul>
+      <p class="hint">Proposal emails go out as “<span id="account-from"></span> via Zone Sense”, and customers' replies go to <span id="account-reply"></span>.</p>
+      <h2 class="section-title">Team</h2>
+      <ul id="team-list" class="list"></ul>
+      <p id="team-empty" class="hint" hidden></p>
+      <button id="team-invite" type="button" class="btn outline wide" hidden>Invite a tech</button>
+      <div id="admin-box" hidden>
+        <h2 class="section-title">Zone Sense admin</h2>
+        <ul id="admin-list" class="list"></ul>
+        <p id="admin-empty" class="hint" hidden></p>
+        <button id="admin-add" type="button" class="btn outline wide">Add a company</button>
+      </div>
+    </section>
+
     <section id="search-view" hidden>
       <div class="search-box">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5L21 21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -133,9 +209,9 @@
         </span>
       </button>
       <button id="settings-cloud" class="company-card">
-        <span class="company-logo-box backup-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4zM4 7l8 6 8-6M14 17l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="company-logo-box backup-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 20c.8-3.4 3.2-5.5 6-5.5s5.2 2.1 6 5.5M16 4.6a3.5 3.5 0 0 1 0 6.3M18 14.8c1.6.8 2.7 2.6 3 5.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         <span class="row-text">
-          <span class="row-name">Online approvals</span>
+          <span class="row-name">Account and team</span>
           <span id="settings-cloud-detail" class="row-detail"></span>
         </span>
       </button>
@@ -645,21 +721,49 @@
     </form>
   </dialog>
 
-  <dialog id="cloud-dialog">
-    <form id="cloud-form">
-      <h2>Online approvals</h2>
-      <p id="cloud-text" class="hint">Sign in with the account set up in Supabase to email proposals that customers sign online.</p>
-      <div id="cloud-fields">
-        <label class="label" for="cloud-email">Email</label>
-        <input id="cloud-email" class="field" type="email" autocomplete="username" autocapitalize="off" maxlength="200" required>
-        <label class="label" for="cloud-password">Password</label>
-        <input id="cloud-password" class="field" type="password" autocomplete="current-password" maxlength="200" required>
-      </div>
-      <p id="cloud-error" class="hint warn" hidden></p>
+  <dialog id="invite-dialog">
+    <form id="invite-form">
+      <h2>Invite a tech</h2>
+      <p class="hint">They'll get an email from your company with a link to choose a password. Then they sign in on their phone.</p>
+      <label class="label" for="invite-email">Their email</label>
+      <input id="invite-email" class="field" type="email" autocomplete="off" autocapitalize="off" maxlength="200" required>
+      <p id="invite-error" class="hint warn" hidden></p>
       <div class="actions">
-        <button id="cloud-signout" type="button" class="btn danger-text start" hidden>Sign out</button>
-        <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Close</button>
-        <button id="cloud-submit" type="submit" class="btn primary">Sign in</button>
+        <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Cancel</button>
+        <button id="invite-submit" type="submit" class="btn primary">Send invite</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="team-company-dialog">
+    <form id="team-company-form">
+      <h2>Company</h2>
+      <label class="label" for="team-company-name">Company name</label>
+      <input id="team-company-name" class="field" type="text" autocapitalize="words" maxlength="120" required>
+      <p class="hint">Customers see this on proposal emails and the approval page.</p>
+      <label class="label" for="team-company-reply">Reply-to email <span class="optional">(optional)</span></label>
+      <input id="team-company-reply" class="field" type="email" autocapitalize="off" maxlength="200" placeholder="e.g. office@yourcompany.com">
+      <p class="hint">Where customers' replies go. Leave it empty to send them to whoever sent the proposal.</p>
+      <p id="team-company-error" class="hint warn" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Cancel</button>
+        <button id="team-company-submit" type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="admin-company-dialog">
+    <form id="admin-company-form">
+      <h2>Add a company</h2>
+      <p class="hint">Starts on the free beta. The owner gets an email to choose a password, then invites their own techs.</p>
+      <label class="label" for="admin-company-name">Company name</label>
+      <input id="admin-company-name" class="field" type="text" autocapitalize="words" maxlength="120" required>
+      <label class="label" for="admin-company-owner">Owner's email</label>
+      <input id="admin-company-owner" class="field" type="email" autocomplete="off" autocapitalize="off" maxlength="200" required>
+      <p id="admin-company-error" class="hint warn" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Cancel</button>
+        <button id="admin-company-submit" type="submit" class="btn primary">Add and invite</button>
       </div>
     </form>
   </dialog>

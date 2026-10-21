@@ -13,14 +13,27 @@
 //   From anyone using the app (no sign-in):
 //     bug     multipart form: action=bug, meta (JSON: description, email, info), screenshot
 //             (optional image). Emails the report to BUG_REPORT_EMAIL and nobody else.
+//     reset   { email } -> emails a "choose a new password" link if that person is on a team.
+//
+//   Accounts (signed in). Zone Sense is invitation only: nobody can sign up, so every
+//   account is made here and belongs to one company.
+//     me              -> { user, company, role, admin }. Marks an invite as accepted.
+//     team            -> { members } for the signed-in person's company.
+//     invite          { email } (owner) -> adds a tech and emails them a link to set a password.
+//     remove_member   { userId } (owner)
+//     update_company  { name, replyTo } (owner)
+//     companies       (Zone Sense admin) -> every company, for running the beta.
+//     create_company  { name, ownerEmail } (Zone Sense admin) -> a company and its owner's invite.
 //
 // Signing fills the PDF's customer approval fields (signature image, date, printed name),
 // adds a signature certificate page (who, when, IP, device, fingerprint of the original),
 // stores the signed copy and emails it to the customer and the technician.
 //
 // Secrets (Edge Functions > Secrets): RESEND_API_KEY, and optionally RESEND_FROM
-// ("Company <approvals@yourdomain.com>"), APPROVE_URL, ALLOWED_EMAILS (comma separated
-// accounts that may send) and BUG_REPORT_EMAIL (where bug reports go). SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
+// ("Company <approvals@yourdomain.com>"), APPROVE_URL, APP_URL (where invite links open),
+// ADMIN_EMAILS (comma separated Zone Sense admins, who can add companies) and
+// BUG_REPORT_EMAIL (where bug reports go). SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are
+// provided by Supabase.
 // Turn "Verify JWT" off for this function: the customer's page has no sign-in.
 
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
@@ -29,6 +42,7 @@ import { PDFDocument, StandardFonts, rgb, PDFName, PDFArray, PDFDict } from 'npm
 const env = (k: string, d = '') => Deno.env.get(k) || d;
 const BUCKET = 'approvals';
 const APPROVE_URL = () => env('APPROVE_URL', 'https://app.zonesenseirrigation.com/approve.html');
+const APP_URL = () => env('APP_URL', APPROVE_URL().replace(/approve\.html.*$/, ''));
 const FROM = () => env('RESEND_FROM', 'Zone Sense <onboarding@resend.dev>');
 const MAX_PDF = 25 * 1024 * 1024;
 const MAX_ATTACHMENT = 20 * 1024 * 1024;
@@ -74,13 +88,29 @@ const clip = (s: unknown, n: number) => String(s ?? '').trim().slice(0, n);
 
 async function user(req: Request) {
   const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!jwt) throw new Fail(401, 'Sign in to send approvals.');
+  if (!jwt) throw new Fail(401, 'Sign in first.');
   const { data, error } = await sb().auth.getUser(jwt);
-  if (error || !data.user) throw new Fail(401, 'Your sign-in has expired. Sign in again in Settings.');
-  const allowed = env('ALLOWED_EMAILS').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (allowed.length && !allowed.includes((data.user.email || '').toLowerCase())) throw new Fail(403, 'This account can’t send approvals.');
+  if (error || !data.user) throw new Fail(401, 'Your sign-in has expired. Sign in again.');
   return data.user;
 }
+
+const isAdmin = (u: { email?: string }) =>
+  env('ADMIN_EMAILS').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).includes((u.email || '').toLowerCase());
+
+// The signed-in person and their company. Everything a company does goes through here, so
+// one company never sees another's people or proposals.
+async function member(req: Request, { owner = false } = {}) {
+  const u = await user(req);
+  const { data: m } = await sb().from('members').select('*').eq('user_id', u.id).maybeSingle();
+  if (!m) throw new Fail(403, 'Your account isn’t part of a company yet.');
+  const { data: company } = await sb().from('companies').select('*').eq('id', m.company_id).maybeSingle();
+  if (!company) throw new Fail(403, 'Your account isn’t part of a company yet.');
+  if (company.status !== 'active') throw new Fail(403, 'Your company’s Zone Sense account is paused. Contact Zone Sense.');
+  if (owner && m.role !== 'owner') throw new Fail(403, 'Only the company’s owner can do that.');
+  return { u, m, company };
+}
+
+const validEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 async function link(path: string | null, seconds = 3600, download?: string) {
   if (!path) return null;
@@ -163,7 +193,7 @@ async function publicView(row: Record<string, any>) {
     signedPdfUrl: row.status === 'approved' ? await link(row.signed_pdf_path, 3600, signedName(row)) : null,
     decidedAt: row.decided_at,
     signerName: row.signer_name,
-    contactEmail: row.owner_email,
+    contactEmail: row.reply_to || row.owner_email,
   };
 }
 
@@ -331,13 +361,13 @@ const pdfSafe = (s: string) => s.normalize('NFKD').replace(/[‘’]/g, "'").rep
 // ---------- actions ----------
 
 async function send(req: Request, form: FormData) {
-  const u = await user(req);
+  const { u, company: co } = await member(req);
   const meta = JSON.parse(String(form.get('meta') || '{}'));
   const pdf = form.get('pdf');
   if (!(pdf instanceof File) || !pdf.size) throw new Fail(400, 'The proposal PDF is missing.');
   if (pdf.size > MAX_PDF) throw new Fail(413, 'This PDF is too large to send (over 25 MB). Try turning photos off in the property’s export settings.');
   const to = clip(meta.customerEmail, 200).toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new Fail(400, 'Enter the customer’s email address.');
+  if (!validEmail(to)) throw new Fail(400, 'Enter the customer’s email address.');
 
   const id = crypto.randomUUID();
   const token = randomToken();
@@ -353,7 +383,10 @@ async function send(req: Request, form: FormData) {
 
   const row = {
     id, token, owner: u.id, owner_email: u.email,
-    company_name: clip(meta.companyName, 120),
+    company_id: co.id,
+    // The company's own name and reply-to address, never what the phone says.
+    company_name: co.name,
+    reply_to: co.reply_to || u.email,
     accent: /^#[0-9a-f]{6}$/i.test(meta.accent || '') ? meta.accent : '#0e7490',
     logo_path: logoPath,
     property: clip(meta.property, 300),
@@ -379,7 +412,7 @@ async function send(req: Request, form: FormData) {
     await email({
       to: [to],
       fromName: row.company_name,
-      replyTo: u.email,
+      replyTo: row.reply_to,
       subject: `Please review and approve: ${row.property || row.report_name}`,
       html: emailShell(row.accent, company, `
         <p>Hi ${esc(row.customer_name || 'there')},</p>
@@ -396,7 +429,7 @@ async function send(req: Request, form: FormData) {
 }
 
 async function status(req: Request, body: any) {
-  const u = await user(req);
+  const { u } = await member(req);
   const ids = (Array.isArray(body.ids) ? body.ids : []).filter((x: unknown) => typeof x === 'string').slice(0, 200);
   if (!ids.length) return json({ items: [] });
   const { data, error } = await sb().from('approvals')
@@ -413,7 +446,7 @@ async function status(req: Request, body: any) {
 }
 
 async function cancel(req: Request, body: any) {
-  const u = await user(req);
+  const { u } = await member(req);
   const { error } = await sb().from('approvals').update({ status: 'cancelled' }).eq('id', body.id).eq('owner', u.id).eq('status', 'sent');
   if (error) throw new Fail(500, error.message);
   return json({ ok: true });
@@ -483,7 +516,7 @@ async function sign(req: Request, body: any) {
   // The approval is saved; a failed email shouldn't tell the customer it wasn't.
   await Promise.allSettled([
     email({
-      to: [row.customer_email], fromName: row.company_name, replyTo: row.owner_email, attachments,
+      to: [row.customer_email], fromName: row.company_name, replyTo: row.reply_to || row.owner_email, attachments,
       subject: `Your signed approval: ${row.property || row.report_name}`,
       html: emailShell(row.accent, company, `<p>Thank you, ${esc(name)}.</p><p>You approved the proposal${esc(total)} for <strong>${esc(row.property)}</strong>. ${copy}</p>`),
     }),
@@ -546,6 +579,200 @@ async function bug(form: FormData) {
   return json({ ok: true });
 }
 
+// ---------- accounts ----------
+
+const companyView = (c: Record<string, any>) => ({
+  id: c.id, name: c.name, replyTo: c.reply_to || '', plan: c.plan, status: c.status, createdAt: c.created_at,
+});
+const memberView = (m: Record<string, any>) => ({
+  userId: m.user_id, email: m.email, name: m.name || '', role: m.role, status: m.status, invitedAt: m.invited_at, joinedAt: m.joined_at,
+});
+
+async function userIdFor(email: string): Promise<string | null> {
+  const { data, error } = await sb().rpc('user_id_for_email', { e: email });
+  if (error) throw new Fail(500, `The accounts database isn’t set up yet: run schema.sql again. (${error.message})`);
+  return data || null;
+}
+
+// A one-time link that opens the app on its "choose a password" screen. The app trades the
+// token for a sign-in with Supabase, so no redirect settings are needed.
+async function passwordLink(email: string, isNew: boolean) {
+  const { data, error } = await sb().auth.admin.generateLink({ type: isNew ? 'invite' : 'recovery', email });
+  if (error || !data?.properties?.hashed_token) throw new Fail(500, `Couldn’t make the link: ${error ? error.message : 'no token'}`);
+  const type = isNew ? 'invite' : 'recovery';
+  return {
+    userId: data.user.id as string,
+    href: `${APP_URL()}?${type}=${encodeURIComponent(data.properties.hashed_token)}&email=${encodeURIComponent(email)}`,
+  };
+}
+
+// Adds someone to a company and emails them. New people get a link to choose a password;
+// people who already have one (say, a Zone Sense admin making their own company) just get
+// told to sign in.
+async function addPerson(company: Record<string, any>, to: string, role: 'owner' | 'tech', by: { id: string; email?: string }) {
+  if (!validEmail(to)) throw new Fail(400, 'Enter their email address.');
+  let id = await userIdFor(to);
+  const { data: existing } = id ? await sb().from('members').select('*').eq('user_id', id).maybeSingle() : { data: null };
+  if (existing && existing.company_id !== company.id) throw new Fail(409, `${to} is already on another company’s team.`);
+  if (existing && existing.status === 'active') throw new Fail(409, `${to} is already on your team.`);
+  let neverSignedIn = !id;
+  if (id) {
+    const { data } = await sb().auth.admin.getUserById(id);
+    neverSignedIn = !data?.user?.last_sign_in_at;
+  }
+  let href = APP_URL();
+  if (neverSignedIn) {
+    const l = await passwordLink(to, !id);
+    id = l.userId;
+    href = l.href;
+  }
+  const self = id === by.id;
+  const { error } = await sb().from('members').upsert({
+    user_id: id, company_id: company.id, email: to, role: existing ? existing.role : role,
+    status: self ? 'active' : 'invited', invited_by: by.id, invited_at: new Date().toISOString(),
+    joined_at: self ? new Date().toISOString() : null,
+  });
+  if (error) throw new Fail(500, `Couldn’t add them: ${error.message}`);
+  if (self) return;
+  const accent = '#0e7490';
+  const what = role === 'owner' ? `set up <strong>${esc(company.name)}</strong> on Zone Sense, the wet check app, with you as its owner` : `invited you to join <strong>${esc(company.name)}</strong> on Zone Sense, the wet check app`;
+  await email({
+    to: [to],
+    fromName: company.name,
+    replyTo: by.email,
+    subject: role === 'owner' ? `Your Zone Sense account for ${company.name}` : `${company.name} invited you to Zone Sense`,
+    html: emailShell(accent, company.name, `
+      <p>Hi,</p>
+      <p>${esc(by.email || 'Someone')} ${what}.</p>
+      ${neverSignedIn
+        ? `${button(accent, href, 'Choose your password')}<p style="color:#6b7280;font-size:13px">The link works once, for 24 hours. Open it on the phone you’ll use, then add Zone Sense to your home screen. If it has expired, ask for a new invite.</p>`
+        : `${button(accent, href, 'Open Zone Sense')}<p style="color:#6b7280;font-size:13px">Sign in with your email and the password you already use.</p>`}`),
+  });
+}
+
+async function me(req: Request) {
+  const u = await user(req);
+  const admin = isAdmin(u);
+  const { data: m } = await sb().from('members').select('*').eq('user_id', u.id).maybeSingle();
+  let company = null;
+  if (m) {
+    const { data } = await sb().from('companies').select('*').eq('id', m.company_id).maybeSingle();
+    company = data;
+    if (m.status !== 'active') {
+      await sb().from('members').update({ status: 'active', joined_at: new Date().toISOString() }).eq('user_id', u.id);
+      m.status = 'active';
+    }
+    const name = clip(u.user_metadata?.name, 120);
+    if (name && name !== m.name) await sb().from('members').update({ name }).eq('user_id', u.id);
+  }
+  return json({
+    user: { id: u.id, email: u.email, name: u.user_metadata?.name || '' },
+    company: company ? companyView(company) : null,
+    role: m && company ? m.role : null,
+    admin,
+  });
+}
+
+async function team(req: Request) {
+  const { company } = await member(req);
+  const { data, error } = await sb().from('members').select('*').eq('company_id', company.id).order('invited_at');
+  if (error) throw new Fail(500, error.message);
+  return json({ members: data.map(memberView) });
+}
+
+async function invite(req: Request, body: any) {
+  const { u, company } = await member(req, { owner: true });
+  await addPerson(company, clip(body.email, 200).toLowerCase(), 'tech', u);
+  return team(req);
+}
+
+async function removeMember(req: Request, body: any) {
+  const { u, company } = await member(req, { owner: true });
+  if (body.userId === u.id) throw new Fail(400, 'You can’t remove yourself.');
+  const { data: m } = await sb().from('members').select('*').eq('user_id', body.userId).eq('company_id', company.id).maybeSingle();
+  if (!m) throw new Fail(404, 'They’re not on your team.');
+  await sb().from('members').delete().eq('user_id', m.user_id);
+  // An invite that was never used leaves no account behind, so they can be invited again later.
+  const { data } = await sb().auth.admin.getUserById(m.user_id);
+  if (data?.user && !data.user.last_sign_in_at && !isAdmin(data.user)) await sb().auth.admin.deleteUser(m.user_id);
+  return team(req);
+}
+
+async function updateCompany(req: Request, body: any) {
+  const { company } = await member(req, { owner: true });
+  const name = clip(body.name, 120);
+  const replyTo = clip(body.replyTo, 200).toLowerCase();
+  if (!name) throw new Fail(400, 'Enter the company name.');
+  if (replyTo && !validEmail(replyTo)) throw new Fail(400, 'Check the reply-to email address.');
+  const { data, error } = await sb().from('companies').update({ name, reply_to: replyTo || null }).eq('id', company.id).select('*').single();
+  if (error) throw new Fail(500, error.message);
+  return json({ company: companyView(data) });
+}
+
+async function companies(req: Request) {
+  const u = await user(req);
+  if (!isAdmin(u)) throw new Fail(403, 'Only Zone Sense admins can see every company.');
+  const [{ data: cs, error }, { data: ms }] = await Promise.all([
+    sb().from('companies').select('*').order('created_at'),
+    sb().from('members').select('company_id,email,role,status'),
+  ]);
+  if (error) throw new Fail(500, error.message);
+  return json({
+    companies: cs.map((c: any) => {
+      const people = (ms || []).filter((m: any) => m.company_id === c.id);
+      return { ...companyView(c), owners: people.filter((m: any) => m.role === 'owner').map((m: any) => m.email), members: people.length };
+    }),
+  });
+}
+
+async function createCompany(req: Request, body: any) {
+  const u = await user(req);
+  if (!isAdmin(u)) throw new Fail(403, 'Only Zone Sense admins can add companies.');
+  const name = clip(body.name, 120);
+  const ownerEmail = clip(body.ownerEmail, 200).toLowerCase();
+  if (!name) throw new Fail(400, 'Enter the company name.');
+  if (!validEmail(ownerEmail)) throw new Fail(400, 'Enter the owner’s email address.');
+  const ownerId = await userIdFor(ownerEmail);
+  if (ownerId) {
+    const { data: m } = await sb().from('members').select('company_id').eq('user_id', ownerId).maybeSingle();
+    if (m) throw new Fail(409, `${ownerEmail} is already on a company’s team.`);
+  }
+  const { data: c, error } = await sb().from('companies').insert({ name, created_by: u.id }).select('*').single();
+  if (error) throw new Fail(500, `Couldn’t add the company: ${error.message}`);
+  try {
+    await addPerson(c, ownerEmail, 'owner', u);
+  } catch (err) {
+    await sb().from('companies').delete().eq('id', c.id);
+    throw err;
+  }
+  return json({ company: companyView(c) });
+}
+
+// "Forgot password" on the sign-in screen. The answer is the same whether or not the email
+// is on a team, so it can't be used to find out who has an account.
+async function reset(body: any) {
+  const to = clip(body.email, 200).toLowerCase();
+  if (!validEmail(to)) throw new Fail(400, 'Enter your email address.');
+  const id = await userIdFor(to);
+  const { data: m } = id ? await sb().from('members').select('*').eq('user_id', id).maybeSingle() : { data: null };
+  // One email every two minutes at most, so nobody can flood someone's inbox.
+  if (m && !(m.reset_sent_at && Date.now() - Date.parse(m.reset_sent_at) < 120000)) {
+    await sb().from('members').update({ reset_sent_at: new Date().toISOString() }).eq('user_id', id);
+    const { data: c } = await sb().from('companies').select('name').eq('id', m.company_id).maybeSingle();
+    const { href } = await passwordLink(to, false);
+    const accent = '#0e7490';
+    await email({
+      to: [to],
+      subject: 'Reset your Zone Sense password',
+      html: emailShell(accent, c ? c.name : 'Zone Sense', `
+        <p>Someone asked to reset the password for ${esc(to)} on Zone Sense.</p>
+        ${button(accent, href, 'Choose a new password')}
+        <p style="color:#6b7280;font-size:13px">The link works once, for 24 hours. If you didn’t ask for this, ignore this email and your password stays the same.</p>`),
+    });
+  }
+  return json({ ok: true });
+}
+
 export async function handle(req: Request) {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Not found' }, 404);
@@ -562,6 +789,14 @@ export async function handle(req: Request) {
       case 'view': return await view(body);
       case 'sign': return await sign(req, body);
       case 'decline': return await decline(req, body);
+      case 'reset': return await reset(body);
+      case 'me': return await me(req);
+      case 'team': return await team(req);
+      case 'invite': return await invite(req, body);
+      case 'remove_member': return await removeMember(req, body);
+      case 'update_company': return await updateCompany(req, body);
+      case 'companies': return await companies(req);
+      case 'create_company': return await createCompany(req, body);
       default: return json({ error: 'Unknown action' }, 400);
     }
   } catch (err) {
