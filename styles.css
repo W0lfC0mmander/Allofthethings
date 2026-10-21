@@ -494,6 +494,8 @@ body:not(.in-report) .zone-panel { display: none; }
 .property-photo-hint { font-size: 0.85rem; color: var(--muted); }
 .property-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .property-photo-actions .btn.danger-text { margin-left: auto; }
+.bug-shot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bug-shot img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
 
 .version { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 32px; }
 

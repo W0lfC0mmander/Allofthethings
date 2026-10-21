@@ -157,6 +157,13 @@
           <span id="settings-storage-detail" class="row-detail">Checking…</span>
         </span>
       </button>
+      <button id="settings-bug" class="company-card">
+        <span class="company-logo-box backup-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 9a4 4 0 0 1 8 0v5a4 4 0 0 1-8 0zM12 10v8M8 12H4m16 0h-4M8 16l-3 2m14-2l-3 2M8 9L5 7m14 0l-3 2M10 5L9 3m5 2l1-2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="row-text">
+          <span class="row-name">Report a bug</span>
+          <span class="row-detail">Something not working? Tell us what happened.</span>
+        </span>
+      </button>
       <p id="settings-version" class="version"></p>
     </section>
 
@@ -653,6 +660,28 @@
         <button id="cloud-signout" type="button" class="btn danger-text start" hidden>Sign out</button>
         <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Close</button>
         <button id="cloud-submit" type="submit" class="btn primary">Sign in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="bug-dialog">
+    <form id="bug-form">
+      <h2>Report a bug</h2>
+      <p class="hint">Sent to the Zone Sense team with the app version and your device type, so we can track it down. Your reports and photos aren't included.</p>
+      <label class="label" for="bug-text">What happened?</label>
+      <textarea id="bug-text" class="field" rows="5" maxlength="5000" required placeholder="e.g. I tapped Export PDF on a report and nothing happened."></textarea>
+      <label class="label" for="bug-email">Your email <span class="optional">(optional, so we can reply)</span></label>
+      <input id="bug-email" class="field" type="email" autocomplete="email" autocapitalize="off" maxlength="200">
+      <label class="label">Screenshot <span class="optional">(optional)</span></label>
+      <div class="bug-shot">
+        <img id="bug-shot-img" alt="" hidden>
+        <label class="btn small outline"><input id="bug-shot-input" type="file" accept="image/*" hidden><span id="bug-shot-label">Add screenshot</span></label>
+        <button id="bug-shot-remove" type="button" class="btn small danger-text" hidden>Remove</button>
+      </div>
+      <p id="bug-error" class="hint warn" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn" onclick="this.closest('dialog').close('cancel')">Cancel</button>
+        <button id="bug-submit" type="submit" class="btn primary">Send</button>
       </div>
     </form>
   </dialog>
