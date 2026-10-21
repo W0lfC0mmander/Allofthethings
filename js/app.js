@@ -12,7 +12,7 @@ const $ = (sel) => document.querySelector(sel);
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-const APP_VERSION = 56;
+const APP_VERSION = 57;
 
 const DEFAULT_DISCLAIMER = '*Troubleshooting required. Additional proposals may be required to complete this repair.';
 const DISCLAIMER_HINT = document.querySelector('#disclaimer-dialog .hint').textContent;
@@ -1199,7 +1199,7 @@ async function cloudDialog() {
 // Emailed to the Zone Sense team through the approvals function (no sign-in needed), with
 // the app version, device and recent errors. Without a connection it opens a mail draft.
 
-const BUG_EMAIL = 'djimenez@rainsenseirrigation.com';
+const BUG_EMAIL = 'djimenez@zonesenseirrigation.com';
 
 async function bugInfo() {
   const info = {

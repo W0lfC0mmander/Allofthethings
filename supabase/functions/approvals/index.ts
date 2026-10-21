@@ -32,7 +32,7 @@ const APPROVE_URL = () => env('APPROVE_URL', 'https://app.zonesenseirrigation.co
 const FROM = () => env('RESEND_FROM', 'Zone Sense <onboarding@resend.dev>');
 const MAX_PDF = 25 * 1024 * 1024;
 const MAX_ATTACHMENT = 20 * 1024 * 1024;
-const BUG_REPORT_EMAIL = () => env('BUG_REPORT_EMAIL', 'djimenez@rainsenseirrigation.com');
+const BUG_REPORT_EMAIL = () => env('BUG_REPORT_EMAIL', 'djimenez@zonesenseirrigation.com');
 const MAX_SCREENSHOT = 8 * 1024 * 1024;
 
 const CORS = {
