@@ -6,7 +6,7 @@ import { $, showDialog } from './ui.js';
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-export const APP_VERSION = 63;
+export const APP_VERSION = 64;
 
 // ---------- Error banner ----------
 // Shows problems on screen instead of failing silently.
