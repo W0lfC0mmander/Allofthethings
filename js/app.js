@@ -1490,9 +1490,26 @@ $('#gate-signout').addEventListener('click', () => {
 });
 
 // ---------- Face ID / fingerprint ----------
-// When it's on, opening the app (or coming back to it after a while) asks for it first.
+// When it's on, it's asked for when the app is opened after being closed, and once a day
+// while it stays open. The time of the last unlock is kept in sessionStorage, which the
+// phone clears when the app is closed, so a reload (like an update) doesn't ask again.
 
-const RELOCK_AFTER = 5 * 60000;
+const RELOCK_AFTER = 24 * 3600000;
+const UNLOCKED = 'wetcheckUnlocked';
+
+function markUnlocked() {
+  try {
+    sessionStorage.setItem(UNLOCKED, String(Date.now()));
+  } catch {}
+}
+function needsUnlock() {
+  if (!lockOn(signedInEmail())) return false;
+  let t = 0;
+  try {
+    t = Number(sessionStorage.getItem(UNLOCKED)) || 0;
+  } catch {}
+  return Date.now() - t > RELOCK_AFTER;
+}
 
 let afterUnlock = null;
 function gateLock(next) {
@@ -1512,6 +1529,7 @@ async function tryUnlock() {
     }
     return;
   }
+  markUnlocked();
   const next = afterUnlock;
   afterUnlock = null;
   if (next) next();
@@ -1529,16 +1547,11 @@ $('#gate-lock-password').addEventListener('click', () => {
   gateSignIn('', email);
 });
 
-// Locks again when the app comes back after a while, unless something's half done in a
-// dialog (a finding being typed, say).
-let hiddenAt = 0;
+// Locks again when the app comes back a day after the last unlock, unless something's half
+// done in a dialog (a finding being typed, say).
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') {
-    hiddenAt = Date.now();
-    return;
-  }
-  if (!appStarted || document.body.classList.contains('gated') || !lockOn(signedInEmail())) return;
-  if (!hiddenAt || Date.now() - hiddenAt < RELOCK_AFTER || document.querySelector('dialog[open]')) return;
+  if (document.visibilityState !== 'visible' || !appStarted || document.body.classList.contains('gated')) return;
+  if (!needsUnlock() || document.querySelector('dialog[open]')) return;
   gateLock(() => enter(account()));
 });
 
@@ -1549,6 +1562,7 @@ async function offerLock() {
   if (!(await askConfirm('Use Face ID or fingerprint?', 'Unlock Zone Sense with Face ID, your fingerprint or your phone’s screen lock instead of typing your password. You can change this in Settings → Account and team.', 'Turn on'))) return;
   try {
     await turnLockOn(email);
+    markUnlocked();
   } catch (x) {
     showToast(x.message);
   }
@@ -1559,7 +1573,7 @@ async function drawLock() {
   $('#lock-list').hidden = !supported;
   if (!supported) return;
   const on = lockOn(signedInEmail());
-  $('#lock-detail').textContent = on ? 'On: asked for when the app opens.' : 'Off. Turn on to unlock the app without your password.';
+  $('#lock-detail').textContent = on ? 'On: asked for when the app opens after being closed, and once a day.' : 'Off. Turn on to unlock the app without your password.';
   $('#lock-toggle').textContent = on ? 'Turn off' : 'Turn on';
 }
 
@@ -1568,6 +1582,7 @@ $('#lock-toggle').addEventListener('click', async () => {
   else {
     try {
       await turnLockOn(signedInEmail());
+      markUnlocked();
     } catch (x) {
       showToast(x.message);
     }
@@ -3752,7 +3767,7 @@ function startApp() {
   }
   if (!cloudReady) return openApp(null);
   if (!signedIn()) return gateSignIn();
-  if (lockOn(signedInEmail())) return gateLock(afterSignedIn);
+  if (needsUnlock()) return gateLock(afterSignedIn);
   afterSignedIn();
 })();
 
