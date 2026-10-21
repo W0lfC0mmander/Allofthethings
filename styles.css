@@ -826,3 +826,26 @@ details.zone-group:not([open]) > .section-title { margin-top: 0; }
   .zone-caption { display: none; }
   .bar { min-height: 52px; padding-top: calc(env(safe-area-inset-top) + 6px); padding-bottom: 6px; }
 }
+
+/* Sign-in screen: covers the whole app until someone is signed in. */
+body.gated > :not(#gate):not(dialog):not(.toast) { display: none !important; }
+.gate {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top) + 32px) 16px calc(env(safe-area-inset-bottom) + 24px);
+}
+.gate-box { max-width: 400px; margin: 0 auto; }
+.gate-logo { display: block; width: 72px; height: 72px; margin: 0 auto 10px; border-radius: 16px; }
+.gate-title { margin: 0 0 18px; text-align: center; font-size: 1.5rem; }
+.gate-text { margin: 0 0 6px; color: var(--muted); }
+.gate-box .btn.wide.primary { margin-top: 18px; }
+.gate-hint { text-align: center; margin-top: 16px; }
+.gate-show { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 0.9rem; color: var(--muted); }
+#gate-error { margin-top: 14px; }
+.gate-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px; margin-top: 28px; font-size: 0.85rem; color: var(--muted); }
+#gate-who:empty { display: none; }
+#gate-who { flex-basis: 100%; text-align: center; }
+#account-view .hint { margin: 8px 4px 0; }
+#team-invite, #admin-add { margin-top: 12px; }
+.row-open:disabled { opacity: 1; }
