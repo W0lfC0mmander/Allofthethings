@@ -4,7 +4,7 @@
 
 const APP_DB = 'wetcheck';
 const TEST_DB = 'wetcheck-storagetest';
-const DEFAULT_PHOTO = 350 * 1024; // used when there are no real photos to measure yet
+const DEFAULT_PHOTO = 600 * 1024; // used when there are no real photos to measure yet
 const MB = 1024 * 1024;
 
 const $ = (sel) => document.querySelector(sel);

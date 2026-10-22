@@ -483,9 +483,16 @@ body:not(.in-report) .zone-panel { display: none; }
 .hint { margin: 8px 0 0; font-size: 0.85rem; color: var(--muted); }
 
 /* Report toolbar */
-.toolbar { display: flex; gap: 8px; margin: 0 0 10px; }
-.toolbar .btn { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); box-shadow: var(--shadow); }
-.toolbar svg { width: 18px; height: 18px; }
+.toolbar { display: flex; gap: 5px; margin: 0 0 10px; }
+.toolbar .btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; padding: 6px 8px; font-size: 0.82rem; white-space: nowrap; background: var(--surface); box-shadow: var(--shadow); }
+.toolbar svg { flex: none; width: 16px; height: 16px; }
+/* Phones under 440px: a shorter label so all three buttons stay on one row; under 380px the
+   icons go too, since font widths differ between phones and the row must never wrap. */
+@media (max-width: 379px) { .toolbar svg { display: none; } }
+@media (max-width: 439px) {
+  #send-approval-label { font-size: 0; }
+  #send-approval-label::after { content: attr(data-short); font-size: 0.82rem; }
+}
 #pdf-dialog .actions { flex-wrap: wrap; align-items: center; }
 #pdf-dialog .actions a.btn { text-decoration: none; }
 #pdf-text { overflow-wrap: anywhere; }
@@ -869,7 +876,8 @@ details.zone-group:not([open]) > .section-title { margin-top: 0; }
 @media (min-width: 1000px) {
   body.in-report main { padding-left: max(12px, calc((100% - 960px) / 2)); padding-right: max(12px, calc((100% - 960px) / 2)); }
 }
-.toolbar { flex-wrap: wrap; }
+.toolbar { flex-wrap: nowrap; }
+@media (max-width: 340px) { .toolbar { flex-wrap: wrap; } }
 
 /* Short landscape screens (a cover screen turned sideways): zone controls sit in one row
    so the findings still get most of the height. */

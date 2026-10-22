@@ -128,6 +128,28 @@ export async function storageStatus() {
   }
 }
 
+// The average size of the finding photos on this phone, from a sample of up to 50 findings
+// (their ids are random, so it's a fair cross-section), or null with no photos yet. Reads the
+// raw records, so a photo is measured without being copied. Zone status marks are left out.
+export async function averagePhotoBytes(sample = 50) {
+  const db = await openDb();
+  const findings = await promisify(db.transaction('findings').objectStore('findings').getAll(null, sample));
+  const size = (p) => (p instanceof Blob ? p.size : p && p.$bytes instanceof ArrayBuffer ? p.$bytes.byteLength : 0);
+  let bytes = 0;
+  let photos = 0;
+  for (const f of findings) {
+    if (f.mark) continue;
+    for (const p of [f.photo, ...(f.morePhotos || [])]) {
+      const n = size(p);
+      if (n) {
+        bytes += n;
+        photos++;
+      }
+    }
+  }
+  return photos ? Math.round(bytes / photos) : null;
+}
+
 // Rewrites records saved before photos were stored as bytes, one at a time so a large
 // collection never sits in memory at once. Runs in the background once per device; a
 // record changed meanwhile is left for its own save to convert.
