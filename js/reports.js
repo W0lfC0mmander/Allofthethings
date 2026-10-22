@@ -24,10 +24,7 @@ export const setFocusFinding = (id) => (focusFinding = id);
 
 export async function reportMenu(report) {
   const action = await askAction(report.name, [
-    { label: 'Export PDF', value: 'pdf' },
-    ...(cloudReady ? [{ label: report.approval && report.approval.status === 'sent' ? 'Send for approval again' : 'Send for approval', value: 'approval' }] : []),
     ...workActions(report),
-    { label: 'Coordinates list', value: 'coords' },
     { label: report.estimate ? 'Turn off repair estimate' : 'Turn on repair estimate', value: 'estimate' },
     ...(report.estimate ? [{ label: 'Use current prices', value: 'prices' }] : []),
     { label: 'Edit report details', value: 'edit' },
@@ -38,10 +35,7 @@ export async function reportMenu(report) {
     render();
   }
   if (action === 'prices') await refreshPrices(report);
-  if (action === 'pdf') await exportPdf(report);
-  if (action === 'approval') await sendForApproval(report);
   if (action.startsWith('work:')) await setWork(report, action.slice(5));
-  if (action === 'coords') await showCoordinates(report);
   if (action === 'edit') await editReport(report);
   if (action === 'delete') await removeReport(report);
 }

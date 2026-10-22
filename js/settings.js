@@ -432,7 +432,7 @@ export async function checkStorage() {
 
 async function openBackupDialog() {
   const last = await db.getSetting('lastBackupAt');
-  $('#backup-last').textContent = last ? `Last full backup: ${formatTime(last)}` : 'No full backup made on this phone yet.';
+  $('#backup-last').textContent = last ? `Last full backup: ${formatTime(last)}` : 'No full backup made on this device yet.';
   showDialog($('#backup-dialog'));
 }
 $('#backup-card').addEventListener('click', openBackupDialog);
@@ -457,14 +457,14 @@ $('#restore-file').addEventListener('change', async (e) => {
   }
   const what = backup.kind === 'property' ? `the property “${backup.name}”` : 'a full backup';
   const when = backup.exportedAt ? ` from ${formatTime(backup.exportedAt)}` : '';
-  const actions = [{ label: 'Add to this phone', value: 'merge' }];
-  if (backup.kind !== 'property') actions.push({ label: 'Replace everything on this phone', value: 'replace', danger: true });
+  const actions = [{ label: 'Add to this device', value: 'merge' }];
+  if (backup.kind !== 'property') actions.push({ label: 'Replace everything on this device', value: 'replace', danger: true });
   const choice = await askAction(`This file has ${what}${when}: ${countsText(backup.counts)}.`, actions);
   if (!choice) return;
   if (choice === 'replace') {
     const ok = await askConfirm(
       'Replace everything?',
-      'Everything on this phone will be deleted and replaced with the backup. Anything not in the backup will be lost. This can’t be undone.',
+      'Everything on this device will be deleted and replaced with the backup. Anything not in the backup will be lost. This can’t be undone.',
       'Replace'
     );
     if (!ok) return;

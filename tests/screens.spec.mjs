@@ -63,8 +63,11 @@ test('every screen opens', async ({ page }) => {
   });
   const { propertyId, reportId } = await seed(page);
   await open(page, '#/', 'folder-view', 'Properties');
+  await expect(page.locator('#brand-title')).toHaveText('Zone Sense');
+  await expect(page.locator('#brand-title')).toHaveCSS('font-variant-caps', 'small-caps');
   await expect(page.locator('#folder-list')).toContainText('Oak Park HOA');
   await open(page, `#/f/${propertyId}`, 'folder-view', 'Oak Park HOA');
+  await expect(page.locator('#brand-title')).toBeHidden();
   await expect(page.locator('#report-groups')).toContainText('Front entrance');
   await open(page, `#/r/${reportId}`, 'report-view', 'Wet check');
   await expect(page.locator('#finding-groups')).toContainText('Broken 4" pop-up');

@@ -6,7 +6,7 @@ import { $, showDialog } from './ui.js';
 
 // Shown on the home screen so it's easy to tell which version a phone is running.
 // Keep in step with VERSION in sw.js.
-export const APP_VERSION = 66;
+export const APP_VERSION = 67;
 
 // ---------- Error banner ----------
 // Shows problems on screen instead of failing silently.
@@ -94,6 +94,7 @@ export function setHeader({ title, subtitle = '', crumbs = [], back = false, mor
   $('#title').textContent = title;
   $('#subtitle').textContent = subtitle;
   $('#subtitle').hidden = !subtitle;
+  $('#brand-title').hidden = title !== 'Properties';
   $('#back').hidden = !back;
   $('#bar-logo').hidden = back || title !== 'Properties';
   $('#header-more').hidden = !more;
