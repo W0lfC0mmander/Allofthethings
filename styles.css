@@ -486,7 +486,9 @@ body:not(.in-report) .zone-panel { display: none; }
 .toolbar { display: flex; gap: 5px; margin: 0 0 10px; }
 .toolbar .btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; padding: 6px 8px; font-size: 0.82rem; white-space: nowrap; background: var(--surface); box-shadow: var(--shadow); }
 .toolbar svg { flex: none; width: 16px; height: 16px; }
-/* Phones under 440px: a shorter label so all three buttons stay on one row. */
+/* Phones under 440px: a shorter label so all three buttons stay on one row; under 380px the
+   icons go too, since font widths differ between phones and the row must never wrap. */
+@media (max-width: 379px) { .toolbar svg { display: none; } }
 @media (max-width: 439px) {
   #send-approval-label { font-size: 0; }
   #send-approval-label::after { content: attr(data-short); font-size: 0.82rem; }

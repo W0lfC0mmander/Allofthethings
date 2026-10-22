@@ -142,7 +142,11 @@ async function openPicker(page, water, zone = '1') {
   await open(page, `#/r/${reportId}`, 'report-view', 'Wet check');
   return reportId;
 }
-const sheetButtons = (page, cls) => page.locator(`#issue-sheet .sheet-btn.${cls}`).allTextContents();
+// The picker builds its buttons after reading the issue list, so wait for them before reading.
+async function sheetButtons(page, cls) {
+  await expect(page.locator('#issue-sheet .sheet-btn').first()).toBeVisible();
+  return page.locator(`#issue-sheet .sheet-btn.${cls}`).allTextContents();
+}
 
 test('group picker: even grid, common groups at the bottom, Other goes straight to the form', async ({ page }) => {
   await openPicker(page, 'municipal');
