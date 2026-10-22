@@ -395,9 +395,9 @@ export function backUp(folder = null) {
 
 // ---------- Storage ----------
 // Warns before the phone runs out of room for photos: at 80% of what the browser allows,
-// or when less than about 300 MB (some 850 photos) is left.
+// or when less than about 300 MB (some 500 photos) is left.
 
-const AVG_PHOTO = 350 * 1024; // a typical compressed finding photo
+const DEFAULT_PHOTO = 600 * 1024; // a typical compressed finding photo, until there are real ones to measure
 const LOW_FREE = 300 * 1024 * 1024;
 const storageLow = (s) => s && (s.usage / s.quota >= 0.8 || s.free < LOW_FREE);
 
@@ -405,15 +405,16 @@ function sizeText(bytes) {
   return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
-function storageText(s) {
-  const photos = Math.floor(s.free / AVG_PHOTO);
+// Room left, counted in photos the size of the ones already saved on this phone.
+async function storageText(s) {
+  const photos = Math.floor(s.free / ((await db.averagePhotoBytes()) || DEFAULT_PHOTO));
   return `Using ${sizeText(s.usage)} of ${sizeText(s.quota)}. Room for about ${photos.toLocaleString()} more photos.`;
 }
 
 async function renderStorageCard() {
   const s = await db.storageStatus();
   const detail = $('#settings-storage-detail');
-  detail.textContent = s ? storageText(s) : 'This phone doesn’t say how much room is left. Tap to test it.';
+  detail.textContent = s ? await storageText(s) : 'This phone doesn’t say how much room is left. Tap to test it.';
   detail.classList.toggle('warn', storageLow(s));
 }
 
@@ -426,7 +427,7 @@ export async function checkStorage() {
   const s = await db.storageStatus();
   if (!storageLow(s)) return;
   storageWarnedAt = Date.now();
-  showToast(`Phone storage is getting full. ${storageText(s)} Make a backup and delete old reports to free up space.`);
+  showToast(`Phone storage is getting full. ${await storageText(s)} Make a backup and delete old reports to free up space.`);
 }
 
 async function openBackupDialog() {

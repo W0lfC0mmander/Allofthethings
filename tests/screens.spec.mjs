@@ -205,6 +205,37 @@ test('an edited issue list gets the new groups once, keeping prices', async ({ p
   expect(byName['Pipe issues']).toBeUndefined();
 });
 
+for (const width of [360, 390, 412]) {
+  test(`report toolbar: all three buttons stay on one row at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 740 });
+    const { reportId } = await seed(page);
+    await open(page, `#/r/${reportId}`, 'report-view', 'Wet check');
+    await expect(page.locator('#send-approval')).toBeVisible();
+    const boxes = await Promise.all(['#export-pdf', '#show-coords', '#send-approval'].map((id) => page.locator(id).boundingBox()));
+    expect(new Set(boxes.map((b) => Math.round(b.y))).size, 'buttons on one row').toBe(1);
+    expect(boxes[2].x + boxes[2].width).toBeLessThanOrEqual(width - 12); // inside the page's side padding
+    if (process.env.SHOTS) await page.locator('.toolbar').screenshot({ path: `${process.env.SHOTS}/toolbar-${width}.png` });
+  });
+}
+
+test('storage: photo estimate uses the real average photo size', async ({ page }) => {
+  const { reportId } = await seed(page);
+  const avg = await page.evaluate(async () => {
+    const db = await import('./js/db.js');
+    const none = await db.averagePhotoBytes(); // the seeded findings have no photos
+    const blob = (kb) => new Blob([new Uint8Array(kb * 1024)], { type: 'image/jpeg' });
+    const report = (await db.listAllReports())[0];
+    await db.saveFinding(report.id, { photo: blob(100), morePhotos: [blob(300)], issue: 'Broken nozzle', zone: '1', note: '' });
+    await db.saveFinding(report.id, { photo: blob(8), issue: 'No issues found', zone: '2', note: '', mark: 'ok' }); // marks aren't photos
+    return { none, avg: await db.averagePhotoBytes() };
+  });
+  expect(avg.none).toBeNull();
+  expect(avg.avg).toBe(200 * 1024);
+  await open(page, '#/settings', 'settings-view', 'Settings');
+  await expect(page.locator('#settings-storage-detail')).toContainText('more photos');
+  void reportId;
+});
+
 test('the customer approval page and storage test page open', async ({ page }) => {
   await page.goto('./approve.html');
   await expect(page.locator('#failed-text')).toContainText('missing part of its address');

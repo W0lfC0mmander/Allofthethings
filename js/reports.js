@@ -130,7 +130,9 @@ async function renderReport(id) {
     more: true,
   });
   $('#send-approval').hidden = !cloudReady;
-  $('#send-approval-label').textContent = report.approval && report.approval.status === 'sent' ? 'Send again' : 'Send for approval';
+  const sent = report.approval && report.approval.status === 'sent';
+  $('#send-approval-label').textContent = sent ? 'Send again' : 'Send for approval';
+  $('#send-approval-label').dataset.short = sent ? 'Resend' : 'Approval'; // what narrow phones show
 
   const zone = zoneOf(report);
   $('#zone-value').textContent = zoneName(zone);
